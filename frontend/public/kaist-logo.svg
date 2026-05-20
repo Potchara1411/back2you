@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 415 120" role="img" aria-labelledby="title">
+  <title id="title">KAIST logo</title>
+  <text
+    x="208"
+    y="70"
+    fill="#004191"
+    font-family="Arial Black, Arial, Helvetica, sans-serif"
+    font-size="82"
+    font-weight="900"
+    letter-spacing="-6"
+    text-anchor="middle"
+  >KAIST</text>
+  <path d="M3 101c118-25 279-25 409 0-132 17-272 17-409 0z" fill="#27a9e1"/>
+</svg>
