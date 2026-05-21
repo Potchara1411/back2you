@@ -1,12 +1,37 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState } from 'react';
 
 const AuthContext = createContext(null);
 
+function parseToken(token) {
+  try {
+    return JSON.parse(atob(token.split('.')[1]));
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(() => localStorage.getItem('token'));
+  const [user, setUser] = useState(() => {
+    const t = localStorage.getItem('token');
+    return t ? parseToken(t) : null;
+  });
+
+  function login(newToken, userData) {
+    localStorage.setItem('token', newToken);
+    setToken(newToken);
+    setUser(userData);
+  }
+
+  function logout() {
+    localStorage.removeItem('token');
+    setToken(null);
+    setUser(null);
+  }
 
   return (
-    <AuthContext.Provider value={{ user, setUser }}>
+    <AuthContext.Provider value={{ token, user, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

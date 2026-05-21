@@ -63,7 +63,7 @@ export default function CreatePostPage() {
         category_id: form.category_id || null,
         images,
       });
-      navigate(`/post/${data.id}`);
+      navigate(`/posts/${data.id}`);
     } catch (requestError) {
       setError(requestError.response?.data?.error || 'Failed to create post.');
     }

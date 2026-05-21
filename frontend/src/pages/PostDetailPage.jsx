@@ -2,13 +2,25 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../services/api';
 
+const MAX_IMAGES = 3;
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+
 const nextStatuses = {
   open: ['hidden', 'claimed'],
-  hidden: ['open'],
+  hidden: [],
   claimed: ['pending_resolution'],
   pending_resolution: ['resolved'],
   resolved: [],
 };
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 export default function PostDetailPage() {
   const { id } = useParams();
@@ -39,6 +51,26 @@ export default function PostDetailPage() {
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function handleImages(event) {
+    const files = Array.from(event.target.files || []);
+    const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+
+    if (files.length > MAX_IMAGES) {
+      setError('You can upload up to 3 images.');
+      event.target.value = '';
+      return;
+    }
+
+    if (totalBytes > MAX_IMAGE_BYTES) {
+      setError('Images must be 15MB or less in total.');
+      event.target.value = '';
+      return;
+    }
+
+    setError('');
+    updateField('images', await Promise.all(files.map(readFileAsDataUrl)));
   }
 
   async function saveEdit(event) {
@@ -159,6 +191,18 @@ export default function PostDetailPage() {
                 <input className="mt-1 w-full border p-2" type="date" value={form.date_occurred} onChange={(event) => updateField('date_occurred', event.target.value)} />
               </label>
             </div>
+            <label className="block">
+              <span className="font-medium">Images</span>
+              <input className="mt-1 w-full border p-2" type="file" accept="image/*" multiple onChange={handleImages} />
+              <span className="mt-1 block text-sm text-gray-500">Max 3 images, 15MB total. Selecting files replaces the current images.</span>
+            </label>
+            {form.images?.length > 0 && (
+              <div className="grid gap-3 md:grid-cols-3">
+                {form.images.map((image) => (
+                  <img key={image} className="h-36 w-full rounded object-cover" src={image} alt="Selected upload preview" />
+                ))}
+              </div>
+            )}
           </div>
           <div className="mt-6 flex gap-2">
             <button className="rounded bg-blue-600 px-4 py-2 font-semibold text-white">Save</button>
