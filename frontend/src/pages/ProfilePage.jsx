@@ -5,7 +5,9 @@ import api from '../services/api';
 const STATUS_LABEL = {
   open: { text: 'Open', cls: 'bg-green-100 text-green-700' },
   claimed: { text: 'Claimed', cls: 'bg-yellow-100 text-yellow-700' },
-  closed: { text: 'Closed', cls: 'bg-gray-100 text-gray-500' },
+  hidden: { text: 'Hidden', cls: 'bg-gray-100 text-gray-500' },
+  pending_resolution: { text: 'Pending', cls: 'bg-orange-100 text-orange-700' },
+  resolved: { text: 'Resolved', cls: 'bg-blue-100 text-blue-700' },
 };
 
 export default function ProfilePage() {

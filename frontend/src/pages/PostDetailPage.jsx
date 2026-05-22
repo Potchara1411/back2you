@@ -8,7 +8,7 @@ import api from '../services/api';
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const nextStatuses = {
-  open: ['hidden', 'claimed'],
+  open: ['claimed'],
   hidden: [],
   claimed: ['pending_resolution'],
   pending_resolution: ['resolved'],
