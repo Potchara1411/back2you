@@ -105,8 +105,9 @@ function DetailRow({ icon: RowIcon, label, value }) {
 }
 
 function StatusStepper({ status }) {
-  const steps = ['open', 'claimed', 'pending_resolution', 'resolved'];
-  const activeIndex = Math.max(steps.indexOf(status), 0);
+  const steps = ['open', 'claimed', 'resolved'];
+  const displayStatus = status === 'pending_resolution' ? 'claimed' : status;
+  const activeIndex = Math.max(steps.indexOf(displayStatus), 0);
 
   return (
     <div className="rounded-2xl bg-slate-50 p-4">
@@ -120,10 +121,9 @@ function StatusStepper({ status }) {
           </div>
         ))}
       </div>
-      <div className="mt-3 grid grid-cols-4 gap-1 text-[10px] font-semibold text-slate-500">
+      <div className="mt-3 grid grid-cols-3 gap-1 text-[10px] font-semibold text-slate-500">
         <span>Open</span>
         <span>Claimed</span>
-        <span>Pending</span>
         <span>Resolved</span>
       </div>
     </div>
