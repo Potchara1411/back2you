@@ -59,12 +59,17 @@ async function verifyOtp(req, res) {
       return res.status(401).json({ error: 'Invalid OTP' });
     }
 
-    const user = {
-      id: 1,
-      email,
-      name: email.split('@')[0],
-      role: email.startsWith('admin') ? 'admin' : 'user',
-    };
+    const role = email.startsWith('admin') ? 'admin' : 'user';
+    const { rows } = await pool.query(
+      `INSERT INTO users (email, name, role)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (email) DO UPDATE
+         SET name = COALESCE(users.name, EXCLUDED.name),
+             role = users.role
+       RETURNING id, email, name, role`,
+      [email, email.split('@')[0], role],
+    );
+    const user = rows[0];
     const { name, ...tokenPayload } = user;
     const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '7d' });
 

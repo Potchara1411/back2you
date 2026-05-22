@@ -28,15 +28,20 @@ function getDateLabel(post) {
   return 'Date';
 }
 
+function getPostId(post) {
+  return post.id ?? post.post_id ?? post.postId;
+}
+
 export default function PostCard({ post }) {
   const image = post.images?.[0];
   const statusClass = statusStyles[post.status] || statusStyles.open;
   const ownerLabel = post.type === 'found' ? 'Finder' : 'Owner';
+  const postId = getPostId(post);
 
   return (
     <Link
-      to={`/posts/${post.id}`}
-      className="block overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_2px_8px_rgba(15,23,42,0.16)] transition active:scale-[0.99]"
+      to={`/posts/${postId}`}
+      className="block cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_2px_8px_rgba(15,23,42,0.16)] transition active:scale-[0.99]"
     >
       <div className="relative h-48 bg-slate-100">
         {image ? (
