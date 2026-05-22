@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarIcon, ChevronLeftIcon, LocationIcon, PlusIcon, TagIcon } from '../components/Icons';
 import MobileLayout from '../components/MobileLayout';
@@ -6,15 +6,11 @@ import api from '../services/api';
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
-const categories = [
-  { id: 1, label: 'Electronics' },
-  { id: 2, label: 'Clothing' },
-  { id: 3, label: 'Books' },
-  { id: 4, label: 'Accessories' },
-  { id: 5, label: 'Keys' },
-  { id: 6, label: 'Wallet' },
-  { id: 7, label: 'ID Card' },
-  { id: 8, label: 'Other' },
+const DEFAULT_CATEGORIES = [
+  { id: 1, label: 'Electronics' }, { id: 2, label: 'Clothing' },
+  { id: 3, label: 'Books' }, { id: 4, label: 'Accessories' },
+  { id: 5, label: 'Keys' }, { id: 6, label: 'Wallet' },
+  { id: 7, label: 'ID Card' }, { id: 8, label: 'Other' },
 ];
 
 const initialForm = {
@@ -50,9 +46,16 @@ function FieldShell({ icon: FieldIcon, label, children }) {
 export default function CreatePostPage() {
   const [form, setForm] = useState(initialForm);
   const [images, setImages] = useState([]);
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    api.get('/posts/categories')
+      .then(({ data }) => setCategories(data.map(c => ({ id: c.id, label: c.name }))))
+      .catch(() => {});
+  }, []);
 
   const selectedCategory = useMemo(
     () => categories.find((category) => String(category.id) === String(form.category_id)),
