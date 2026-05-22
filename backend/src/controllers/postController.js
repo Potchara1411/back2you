@@ -7,7 +7,7 @@ const MAX_LIMIT = 50;
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const STATUS_TRANSITIONS = {
-  open: new Set(['hidden', 'claimed']),
+  open: new Set(['claimed']),
   hidden: new Set([]),
   claimed: new Set(['pending_resolution']),
   pending_resolution: new Set(['resolved']),

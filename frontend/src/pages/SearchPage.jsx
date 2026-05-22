@@ -32,17 +32,13 @@ const postFilters = [
 ];
 const categories = [
   'Electronics',
-  'Bags & Backpacks',
   'Clothing',
-  'Keys',
-  'Wallets & Cards',
-  'Stationery & Books',
-  'Glasses & Eyewear',
+  'Books',
   'Accessories',
-  'Sports & Gym',
-  'Umbrellas',
-  'Documents',
-  'Others',
+  'Keys',
+  'Wallet',
+  'ID Card',
+  'Other',
 ];
 const buildingsByArea = {
   North: [

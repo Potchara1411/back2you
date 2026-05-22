@@ -6,21 +6,16 @@ import api from '../services/api';
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
-const categoryLabels = [
-  'Electronics',
-  'Bags & Backpacks',
-  'Clothing',
-  'Keys',
-  'Wallets & Cards',
-  'Stationery & Books',
-  'Glasses & Eyewear',
-  'Accessories',
-  'Sports & Gym',
-  'Umbrellas',
-  'Documents',
-  'Others',
+const categories = [
+  { id: 1, label: 'Electronics' },
+  { id: 2, label: 'Clothing' },
+  { id: 3, label: 'Books' },
+  { id: 4, label: 'Accessories' },
+  { id: 5, label: 'Keys' },
+  { id: 6, label: 'Wallet' },
+  { id: 7, label: 'ID Card' },
+  { id: 8, label: 'Other' },
 ];
-const categories = categoryLabels.map((label, index) => ({ id: index + 1, label }));
 const buildingsByArea = {
   North: [
     'N1 IT Convergence Building',

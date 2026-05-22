@@ -70,7 +70,8 @@ async function verifyOtp(req, res) {
       [email, email.split('@')[0], role],
     );
     const user = rows[0];
-    const token = jwt.sign(user, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const { name, ...tokenPayload } = user;
+    const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '7d' });
 
     return res.json({ token, user });
   }
