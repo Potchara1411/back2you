@@ -125,9 +125,9 @@ function StatusStepper({ status }) {
         ))}
       </div>
       <div className="mt-3 grid grid-cols-3 gap-1 text-[10px] font-semibold text-slate-500">
-        <span>Open</span>
-        <span>Claimed</span>
-        <span>Resolved</span>
+        <span className="text-left">Open</span>
+        <span className="text-center">Claimed</span>
+        <span className="text-right">Resolved</span>
       </div>
     </div>
   );
