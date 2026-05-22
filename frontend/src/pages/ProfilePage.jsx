@@ -11,7 +11,7 @@ const STATUS_LABEL = {
 };
 
 export default function ProfilePage() {
-  const { user: authUser, login, token } = useAuth();
+  const { login, token } = useAuth();
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [editName, setEditName] = useState('');
