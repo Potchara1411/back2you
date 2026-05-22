@@ -10,11 +10,14 @@ function isTokenExpired(token) {
   }
 }
 
-export default function ProtectedRoute({ children }) {
-  const { token, logout } = useAuth();
+export default function ProtectedRoute({ children, allowedRoles, redirectTo = '/' }) {
+  const { token, user, logout } = useAuth();
   if (!token || isTokenExpired(token)) {
     if (token) logout();
     return <Navigate to="/login" replace />;
+  }
+  if (allowedRoles && !allowedRoles.includes(user?.role)) {
+    return <Navigate to={redirectTo} replace />;
   }
   return children;
 }
