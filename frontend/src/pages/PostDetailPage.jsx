@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CalendarIcon, ChevronLeftIcon, LocationIcon, TagIcon } from '../components/Icons';
 import MobileLayout from '../components/MobileLayout';
+import { useAuth } from '../context/AuthContext';
 import { getMockPost } from '../data/mockPosts';
 import api from '../services/api';
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const nextStatuses = {
-  open: ['hidden', 'claimed'],
+  open: ['claimed'],
   hidden: [],
   claimed: ['pending_resolution'],
   pending_resolution: ['resolved'],
@@ -216,6 +217,7 @@ function EditForm({ form, error, onCancel, onChange, onImages, onSubmit }) {
 export default function PostDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [post, setPost] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState(null);
@@ -268,6 +270,7 @@ export default function PostDetailPage() {
 
   const heroImage = useMemo(() => post?.images?.[activeImage] || post?.images?.[0], [activeImage, post]);
   const availableNextStatuses = nextStatuses[post?.status] || [];
+  const isPostOwner = Boolean(user && post && Number(user.id) === Number(post.user_id));
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -295,6 +298,11 @@ export default function PostDetailPage() {
 
   async function saveEdit(event) {
     event.preventDefault();
+    if (!isPostOwner) {
+      setError('Only the owner can edit this post.');
+      setEditMode(false);
+      return;
+    }
     setError('');
     try {
       const { data } = await api.put(`/posts/${id}`, {
@@ -310,6 +318,10 @@ export default function PostDetailPage() {
   }
 
   async function deletePost() {
+    if (!isPostOwner) {
+      setError('Only the owner can delete this post.');
+      return;
+    }
     if (!confirm('Delete this post?')) return;
     try {
       await api.delete(`/posts/${id}`);
@@ -320,6 +332,10 @@ export default function PostDetailPage() {
   }
 
   async function changeStatus(status) {
+    if (!isPostOwner) {
+      setError('Only the owner can change this status.');
+      return;
+    }
     setError('');
     try {
       const { data } = await api.patch(`/posts/${id}/status`, { status });
@@ -376,14 +392,16 @@ export default function PostDetailPage() {
             <IconButton label="Go back" onClick={() => navigate(-1)}>
               <ChevronLeftIcon className="h-5 w-5" />
             </IconButton>
-            <div className="flex gap-2">
-              <IconButton label="Edit post" onClick={() => setEditMode(true)}>
-                <EditIcon />
-              </IconButton>
-              <IconButton label="Delete post" tone="bg-white/90 text-red-600" onClick={deletePost}>
-                <TrashIcon />
-              </IconButton>
-            </div>
+            {isPostOwner && (
+              <div className="flex gap-2">
+                <IconButton label="Edit post" onClick={() => setEditMode(true)}>
+                  <EditIcon />
+                </IconButton>
+                <IconButton label="Delete post" tone="bg-white/90 text-red-600" onClick={deletePost}>
+                  <TrashIcon />
+                </IconButton>
+              </div>
+            )}
           </div>
           <div className="absolute bottom-5 left-5 right-5">
             <div className="flex flex-wrap gap-2">
@@ -431,7 +449,7 @@ export default function PostDetailPage() {
 
           <StatusStepper status={post.status} />
 
-          {availableNextStatuses.length > 0 && (
+          {isPostOwner && availableNextStatuses.length > 0 && (
             <div className="space-y-3">
               {availableNextStatuses.map((status) => (
                 <button
