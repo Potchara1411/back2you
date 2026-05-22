@@ -93,8 +93,6 @@ const filters = [
   { id: 'reported', label: 'Reported' },
   { id: 'expired', label: 'Expired' },
   { id: 'hidden', label: 'Hidden' },
-  { id: 'claimed', label: 'Claimed' },
-  { id: 'pending_resolution', label: 'Pending' },
   { id: 'resolved', label: 'Resolved' },
   { id: 'pending_resolution', label: 'Pending' },
   { id: 'old_unresolved', label: 'Old' },
@@ -124,8 +122,6 @@ function matchesFilter(post, filter) {
   if (filter === 'reported') return Number(post.report_count) > 0;
   if (filter === 'expired') return Boolean(post.is_expired);
   if (filter === 'hidden') return post.status === 'hidden';
-  if (filter === 'claimed') return post.status === 'claimed';
-  if (filter === 'pending_resolution') return post.status === 'pending_resolution';
   if (filter === 'resolved') return post.status === 'resolved';
   if (filter === 'pending_resolution') return post.status === 'pending_resolution';
   if (filter === 'old_unresolved') {
@@ -134,6 +130,63 @@ function matchesFilter(post, filter) {
     return ['open', 'claimed', 'pending_resolution'].includes(post.status) && daysOld > 30;
   }
   return true;
+}
+
+function getSearchText(post) {
+  return [
+    post.title,
+    post.description,
+    post.location,
+    post.category_name,
+    post.category,
+    post.owner_name,
+    post.owner_email,
+    post.status,
+    post.type,
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function matchesSearch(post, keyword) {
+  const normalizedKeyword = keyword.trim().toLowerCase();
+  if (!normalizedKeyword) return true;
+  return getSearchText(post).includes(normalizedKeyword);
+}
+
+function matchesAdminPostFilters(post, advancedFilters) {
+  const category = (post.category_name || post.category || '').toLowerCase();
+  const location = (post.location || '').toLowerCase();
+  const postDate = (post.date_occurred || post.created_at || '').slice(0, 10);
+
+  if (advancedFilters.category && category !== advancedFilters.category.toLowerCase()) {
+    return false;
+  }
+  if (advancedFilters.date && postDate !== advancedFilters.date) {
+    return false;
+  }
+  if (advancedFilters.location && !location.includes(advancedFilters.location.toLowerCase())) {
+    return false;
+  }
+  return true;
+}
+
+function getAdminRelevanceScore(post, keyword) {
+  const normalizedKeyword = keyword.trim().toLowerCase();
+  if (!normalizedKeyword) return 0;
+
+  const title = post.title?.toLowerCase() || '';
+  const description = post.description?.toLowerCase() || '';
+  const category = (post.category_name || post.category || '').toLowerCase();
+  const location = post.location?.toLowerCase() || '';
+  const owner = `${post.owner_name || ''} ${post.owner_email || ''}`.toLowerCase();
+
+  if (title === normalizedKeyword) return 100;
+  if (title.startsWith(normalizedKeyword)) return 90;
+  if (title.includes(normalizedKeyword)) return 80;
+  if (description.includes(normalizedKeyword)) return 50;
+  if (category.includes(normalizedKeyword)) return 35;
+  if (location.includes(normalizedKeyword)) return 25;
+  if (owner.includes(normalizedKeyword)) return 15;
+  return 0;
 }
 
 function userDisplayId(user) {
@@ -173,6 +226,10 @@ export default function AdminPage() {
   const [categories, setCategories] = useState([]);
   const [policy, setPolicy] = useState({ hideAfterDays: 45, deleteAfterDays: 60 });
   const [activeFilter, setActiveFilter] = useState('all');
+  const [postKeyword, setPostKeyword] = useState('');
+  const [postAdvancedFilters, setPostAdvancedFilters] = useState({ category: '', date: '', location: '' });
+  const [openPostFilter, setOpenPostFilter] = useState('');
+  const [postSortBy, setPostSortBy] = useState('newest');
   const [activeSection, setActiveSection] = useState('posts');
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState('');
@@ -182,6 +239,14 @@ export default function AdminPage() {
   const reportedPreview = useMemo(
     () => normalizeReportRows(previewPosts.filter((post) => Number(post.report_count) > 0)),
     [],
+  );
+
+  const postCategoryOptions = useMemo(
+    () => Array.from(new Set([
+      ...categories.map((category) => category.name),
+      ...posts.map((post) => post.category_name || post.category),
+    ].filter(Boolean))).sort(),
+    [categories, posts],
   );
 
   async function loadPosts({ showLoading = true } = {}) {
@@ -255,15 +320,32 @@ export default function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (activeSection === 'settings') loadSettings();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSection]);
-
   const filteredPosts = useMemo(
-    () => posts.filter((post) => matchesFilter(post, activeFilter)),
-    [activeFilter, posts],
+    () => posts
+      .filter((post) => matchesFilter(post, activeFilter))
+      .filter((post) => matchesSearch(post, postKeyword))
+      .filter((post) => matchesAdminPostFilters(post, postAdvancedFilters))
+      .sort((firstPost, secondPost) => {
+        if (postSortBy === 'oldest') {
+          return new Date(firstPost.created_at) - new Date(secondPost.created_at);
+        }
+        if (postSortBy === 'relevance') {
+          const scoreDifference = getAdminRelevanceScore(secondPost, postKeyword) - getAdminRelevanceScore(firstPost, postKeyword);
+          if (scoreDifference !== 0) return scoreDifference;
+        }
+        return new Date(secondPost.created_at) - new Date(firstPost.created_at);
+      }),
+    [activeFilter, postAdvancedFilters, postKeyword, postSortBy, posts],
   );
+
+  function updatePostAdvancedFilter(key, value) {
+    setPostAdvancedFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function clearPostAdvancedFilters() {
+    setPostAdvancedFilters({ category: '', date: '', location: '' });
+    setOpenPostFilter('');
+  }
 
   function updatePostEverywhere(postId, updater) {
     setPosts((current) => current.map((item) => (item.id === postId ? updater(item) : item)));
@@ -296,26 +378,22 @@ export default function AdminPage() {
     }
   }
 
-  async function resolvePost(post) {
-    const confirmed = window.confirm('Mark this pending post as resolved?');
+  async function unhidePost(post) {
+    const confirmed = window.confirm('Make this hidden post visible again?');
     if (!confirmed) return;
 
     if (isPreview) {
-      setPosts((currentPosts) =>
-        currentPosts.map((item) => (item.id === post.id ? { ...item, status: 'resolved' } : item)),
-      );
-      setNotice('Preview post resolved locally.');
+      updatePostEverywhere(post.id, (item) => ({ ...item, status: 'open' }));
+      setNotice('Preview post restored locally.');
       return;
     }
 
     try {
-      const { data } = await api.patch(`/admin/posts/${post.id}/resolve`);
-      setPosts((currentPosts) =>
-        currentPosts.map((item) => (item.id === post.id ? { ...item, ...data.post } : item)),
-      );
-      setNotice('Post resolved.');
+      const { data } = await api.patch(`/admin/posts/${post.id}/unhide`);
+      updatePostEverywhere(post.id, (item) => ({ ...item, ...data.post, status: 'open' }));
+      setNotice(data.noticeSent ? 'Post restored and owner notified.' : 'Post restored.');
     } catch (error) {
-      setNotice(error.response?.data?.error || 'Failed to resolve post.');
+      setNotice(error.response?.data?.error || 'Failed to unhide post.');
     }
   }
 
@@ -356,25 +434,6 @@ export default function AdminPage() {
       setNotice(`${data.dismissedCount || 0} report(s) dismissed.`);
     } catch (error) {
       setNotice(error.response?.data?.error || 'Failed to dismiss report.');
-    }
-  }
-
-  async function unhidePost(post) {
-    const confirmed = window.confirm('Unhide this post and make it visible again?');
-    if (!confirmed) return;
-
-    if (isPreview) {
-      updatePostEverywhere(post.id, (item) => ({ ...item, status: 'open' }));
-      setNotice('Preview post unhidden locally.');
-      return;
-    }
-
-    try {
-      const { data } = await api.patch(`/admin/posts/${post.id}/unhide`);
-      updatePostEverywhere(post.id, (item) => ({ ...item, ...data.post, status: 'open' }));
-      setNotice(data.noticeSent ? 'Post unhidden and owner notified.' : 'Post unhidden.');
-    } catch (error) {
-      setNotice(error.response?.data?.error || 'Failed to unhide post.');
     }
   }
 
@@ -511,6 +570,13 @@ export default function AdminPage() {
   async function addCategory(name) {
     const trimmed = name.trim();
     if (!trimmed) return;
+
+    if (isPreview) {
+      setCategories((current) => [...current, { id: `preview-${Date.now()}`, name: trimmed, active_post_count: 0, total_post_count: 0 }]);
+      setNotice('Preview category added.');
+      return;
+    }
+
     try {
       const { data } = await api.post('/admin/categories', { name: trimmed });
       setCategories((current) => [...current, { ...data.category, active_post_count: 0, total_post_count: 0 }]);
@@ -523,6 +589,13 @@ export default function AdminPage() {
   async function editCategory(category) {
     const nextName = window.prompt('Rename category', category.name);
     if (!nextName?.trim() || nextName.trim() === category.name) return;
+
+    if (isPreview) {
+      setCategories((current) => current.map((item) => (item.id === category.id ? { ...item, name: nextName.trim() } : item)));
+      setNotice('Preview category renamed.');
+      return;
+    }
+
     try {
       const { data } = await api.patch(`/admin/categories/${category.id}`, { name: nextName.trim() });
       setCategories((current) => current.map((item) => (item.id === category.id ? { ...item, ...data.category } : item)));
@@ -535,6 +608,13 @@ export default function AdminPage() {
   async function deleteCategory(category) {
     const confirmed = window.confirm(`Delete ${category.name}? Active posts will be reassigned to Other.`);
     if (!confirmed) return;
+
+    if (isPreview) {
+      setCategories((current) => current.filter((item) => item.id !== category.id));
+      setNotice('Preview category deleted.');
+      return;
+    }
+
     try {
       const { data } = await api.delete(`/admin/categories/${category.id}`);
       setCategories((current) => current.filter((item) => item.id !== category.id));
@@ -545,6 +625,12 @@ export default function AdminPage() {
   }
 
   async function savePolicy(nextPolicy) {
+    if (isPreview) {
+      setPolicy(nextPolicy);
+      setNotice('Preview policy saved locally.');
+      return;
+    }
+
     try {
       const { data } = await api.put('/admin/settings/expiration-policy', nextPolicy);
       setPolicy(data.policy);
@@ -554,14 +640,19 @@ export default function AdminPage() {
     }
   }
 
+  async function handleLogout() {
+    await logout();
+    navigate('/login', { replace: true });
+  }
+
   return (
-    <main className="min-h-screen bg-white text-[#101828] sm:flex sm:items-center sm:justify-center sm:bg-slate-50 sm:p-8" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-      <div className="relative mx-auto min-h-screen max-w-md bg-white sm:h-[860px] sm:min-h-0 sm:w-[430px] sm:overflow-hidden sm:rounded-[3.25rem] sm:border-[14px] sm:border-slate-950 sm:shadow-[0_28px_90px_rgba(15,23,42,0.24)]">
-        <div className="pointer-events-none absolute left-1/2 top-4 z-40 hidden h-7 w-32 -translate-x-1/2 rounded-full bg-slate-950 sm:block" />
-        <div className="flex min-h-screen flex-col bg-white sm:h-full sm:min-h-0 sm:rounded-[2.35rem] sm:pt-12">
+    <main className="min-h-screen bg-white text-[#101828]" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+      <div className="flex min-h-screen items-center justify-center px-0 py-0 sm:px-6 sm:py-6">
+        <div className="box-border flex h-[min(844px,100vh)] w-[min(390px,100vw)] flex-col overflow-hidden bg-[#F9FAFB] shadow-2xl sm:h-[844px] sm:w-[390px] sm:rounded-[48px] sm:border-[14px] sm:border-[#101828]">
+          <PhoneStatusBar />
 
           <div className="flex min-h-0 flex-1 flex-col bg-white">
-            <AppHeader onRefresh={() => loadAdminData()} onLogout={async () => { await logout(); navigate('/login', { replace: true }); }} />
+            <AppHeader onRefresh={() => loadAdminData()} onLogout={handleLogout} />
             <SectionHeader activeSection={activeSection} />
 
             {notice && (
@@ -575,11 +666,20 @@ export default function AdminPage() {
                 <PostsPanel
                   posts={filteredPosts}
                   activeFilter={activeFilter}
+                  keyword={postKeyword}
+                  advancedFilters={postAdvancedFilters}
+                  categoryOptions={postCategoryOptions}
+                  openFilter={openPostFilter}
+                  sortBy={postSortBy}
                   loading={loading}
                   onFilterChange={setActiveFilter}
+                  onKeywordChange={setPostKeyword}
+                  onAdvancedFilterChange={updatePostAdvancedFilter}
+                  onClearAdvancedFilters={clearPostAdvancedFilters}
+                  onOpenFilterChange={setOpenPostFilter}
+                  onSortChange={setPostSortBy}
                   onHide={hidePost}
                   onUnhide={unhidePost}
-                  onResolve={resolvePost}
                   onDelete={deletePost}
                   onReopen={reopenPost}
                 />
@@ -628,6 +728,7 @@ export default function AdminPage() {
           </div>
 
           <BottomNav activeSection={activeSection} onSectionChange={setActiveSection} />
+          <HomeIndicator />
         </div>
       </div>
     </main>
@@ -665,10 +766,10 @@ function AppHeader({ onRefresh, onLogout }) {
         <button
           type="button"
           onClick={onLogout}
-          aria-label="Logout"
-          className="flex h-8 items-center gap-1 rounded-full bg-[#FEF2F2] px-3 text-[12px] font-medium text-[#C10007]"
+          aria-label="Log out"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-[#FEF2F2] text-[#C10007]"
         >
-          Logout
+          <IconLogout />
         </button>
       </div>
     </header>
@@ -807,21 +908,81 @@ function UserCard({ user, tone, onShowActivity, onToggleBlock, onSendNotice }) {
   );
 }
 
-function PostsPanel({ posts, activeFilter, loading, onFilterChange, onHide, onUnhide, onResolve, onDelete }) {
+function SearchField({ value, onChange, placeholder = 'Search admin posts...' }) {
+  return (
+    <label className="flex h-12 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-slate-400">
+      <IconSearchSmall />
+      <input
+        className="min-w-0 flex-1 bg-transparent text-base text-slate-950 outline-none placeholder:text-slate-400"
+        name="keyword"
+        placeholder={placeholder}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
+function PostsPanel({
+  posts,
+  activeFilter,
+  keyword,
+  advancedFilters,
+  categoryOptions,
+  openFilter,
+  sortBy,
+  loading,
+  onFilterChange,
+  onKeywordChange,
+  onAdvancedFilterChange,
+  onClearAdvancedFilters,
+  onOpenFilterChange,
+  onSortChange,
+  onHide,
+  onUnhide,
+  onDelete,
+  onReopen,
+}) {
   if (loading) {
     return <EmptyState label="Loading posts..." />;
   }
 
   return (
-    <section className="flex flex-col gap-3">
+    <section className="flex flex-col gap-4">
+      <form onSubmit={(event) => event.preventDefault()}>
+        <SearchField value={keyword} onChange={onKeywordChange} />
+      </form>
+
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          { id: 'newest', label: 'Newest First', icon: <IconSortDown /> },
+          { id: 'oldest', label: 'Oldest First', icon: <IconSortUp /> },
+          { id: 'relevance', label: 'Relevance', icon: <IconSpark /> },
+        ].map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            onClick={() => onSortChange(option.id)}
+            className={`min-h-[76px] rounded-[14px] border px-2 py-2 text-[12px] font-semibold ${
+              sortBy === option.id
+                ? 'border-blue-200 bg-blue-50 text-blue-600'
+                : 'border-slate-200 bg-slate-50 text-slate-600'
+            }`}
+          >
+            <span className="mx-auto mb-1 flex h-5 w-5 items-center justify-center">{option.icon}</span>
+            {option.label}
+          </button>
+        ))}
+      </div>
+
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
         {filters.map((filter) => (
           <button
             type="button"
             key={filter.id}
             onClick={() => onFilterChange(filter.id)}
-            className={`shrink-0 rounded-[10px] px-3 py-2 text-[12px] font-medium ${
-              activeFilter === filter.id ? 'bg-[#155DFC] text-white' : 'bg-[#F3F4F6] text-[#6A7282]'
+            className={`shrink-0 rounded-full px-3 py-2 text-[12px] font-semibold ${
+              activeFilter === filter.id ? 'bg-[#155DFC] text-white' : 'bg-slate-100 text-slate-600'
             }`}
           >
             {filter.label}
@@ -829,68 +990,229 @@ function PostsPanel({ posts, activeFilter, loading, onFilterChange, onHide, onUn
         ))}
       </div>
 
+      <div className="grid grid-cols-4 gap-2">
+        {[
+          { id: 'category', label: advancedFilters.category || 'Category', icon: <IconTag /> },
+          { id: 'date', label: advancedFilters.date || 'Date', icon: <IconCalendar /> },
+          { id: 'location', label: advancedFilters.location || 'Location', icon: <IconLocation /> },
+        ].map((filter) => {
+          const selected = Boolean(advancedFilters[filter.id]);
+          return (
+            <button
+              key={filter.id}
+              type="button"
+              onClick={() => onOpenFilterChange(openFilter === filter.id ? '' : filter.id)}
+              className={`min-h-[62px] rounded-[14px] border px-2 py-2 text-[12px] font-semibold ${
+                openFilter === filter.id
+                  ? 'border-blue-200 bg-blue-50 text-blue-600'
+                  : selected
+                    ? 'border-blue-100 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 bg-white text-slate-600'
+              }`}
+            >
+              <span className="mx-auto mb-1 flex h-5 w-5 items-center justify-center">{filter.icon}</span>
+              <span className="block truncate">{filter.label}</span>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={onClearAdvancedFilters}
+          className="min-h-[62px] rounded-[14px] border border-slate-200 bg-white px-2 py-2 text-[12px] font-semibold text-slate-600"
+        >
+          Clear
+        </button>
+      </div>
+
+      {openFilter && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+          {openFilter === 'category' && (
+            <select
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
+              value={advancedFilters.category}
+              onChange={(event) => onAdvancedFilterChange('category', event.target.value)}
+            >
+              <option value="">All categories</option>
+              {categoryOptions.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {openFilter === 'date' && (
+            <input
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
+              type="date"
+              value={advancedFilters.date}
+              onChange={(event) => onAdvancedFilterChange('date', event.target.value)}
+            />
+          )}
+
+          {openFilter === 'location' && (
+            <input
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
+              value={advancedFilters.location}
+              onChange={(event) => onAdvancedFilterChange('location', event.target.value)}
+              placeholder="Building, area, or room"
+            />
+          )}
+        </div>
+      )}
+
+      <div className="border-t border-slate-100 pt-4">
+        <p className="text-[14px] font-medium text-slate-500">
+          {posts.length} result{posts.length === 1 ? '' : 's'}
+        </p>
+      </div>
+
       {posts.length ? (
         posts.map((post) => (
-          <PostCard key={post.id} post={post} onHide={onHide} onUnhide={onUnhide} onResolve={onResolve} onDelete={onDelete} />
+          <PostCard key={post.id} post={post} onHide={onHide} onUnhide={onUnhide} onDelete={onDelete} onReopen={onReopen} />
         ))
       ) : (
-        <EmptyState label="No posts found." />
+        <EmptyState label={keyword ? 'No posts match your search.' : 'No posts found.'} />
       )}
     </section>
   );
 }
 
-function PostCard({ post, onHide, onUnhide, onResolve, onDelete }) {
+function ReportsPanel({ reports, loading, onHide, onUnhide, onDelete, onDismiss }) {
+  if (loading) {
+    return <EmptyState label="Loading reported content..." />;
+  }
+
+  return (
+    <section className="flex flex-col gap-3">
+      {reports.length ? (
+        reports.map((post) => (
+          <ReportCard key={post.id} post={post} onHide={onHide} onUnhide={onUnhide} onDelete={onDelete} onDismiss={onDismiss} />
+        ))
+      ) : (
+        <EmptyState label="No reported content." />
+      )}
+    </section>
+  );
+}
+
+function ResolutionsPanel({ posts, loading, onResolve, onReject }) {
+  if (loading) {
+    return <EmptyState label="Loading pending resolutions..." />;
+  }
+
+  return (
+    <section className="flex flex-col gap-3">
+      {posts.length ? (
+        posts.map((post) => (
+          <ResolutionCard key={post.id} post={post} onResolve={onResolve} onReject={onReject} />
+        ))
+      ) : (
+        <EmptyState label="No posts waiting for resolution review." />
+      )}
+    </section>
+  );
+}
+
+function SettingsPanel({ categories, policy, onAddCategory, onEditCategory, onDeleteCategory, onSavePolicy }) {
+  const [categoryName, setCategoryName] = useState('');
+  const [draftPolicy, setDraftPolicy] = useState(policy);
+
+  function submitCategory(event) {
+    event.preventDefault();
+    onAddCategory(categoryName);
+    setCategoryName('');
+  }
+
+  function submitPolicy(event) {
+    event.preventDefault();
+    onSavePolicy({
+      hideAfterDays: Number(draftPolicy.hideAfterDays),
+      deleteAfterDays: Number(draftPolicy.deleteAfterDays),
+    });
+  }
+
+  return (
+    <section className="flex flex-col gap-4">
+      <form onSubmit={submitCategory} className="rounded-[14px] border border-[#E5E7EB] bg-white p-4 shadow-sm">
+        <h3 className="text-[14px] font-semibold text-[#101828]">Categories</h3>
+        <div className="mt-3 flex gap-2">
+          <input
+            className="min-w-0 flex-1 rounded-[10px] border border-[#E5E7EB] px-3 text-[13px] outline-none focus:border-[#155DFC]"
+            value={categoryName}
+            onChange={(event) => setCategoryName(event.target.value)}
+            placeholder="New category"
+          />
+          <button type="submit" className="rounded-[10px] bg-[#155DFC] px-3 py-2 text-[12px] font-medium text-white">
+            Add
+          </button>
+        </div>
+        <div className="mt-3 space-y-2">
+          {categories.length ? (
+            categories.map((category) => (
+              <div key={category.id} className="flex items-center gap-2 rounded-[10px] bg-[#F9FAFB] px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-medium text-[#101828]">{category.name}</p>
+                  <p className="text-[11px] text-[#6A7282]">{category.active_post_count || 0} active posts</p>
+                </div>
+                <button type="button" onClick={() => onEditCategory(category)} className="text-[12px] font-medium text-[#155DFC]">
+                  Edit
+                </button>
+                <button type="button" onClick={() => onDeleteCategory(category)} className="text-[12px] font-medium text-[#C10007]">
+                  Delete
+                </button>
+              </div>
+            ))
+          ) : (
+            <p className="text-[12px] text-[#6A7282]">No categories found.</p>
+          )}
+        </div>
+      </form>
+
+      <form onSubmit={submitPolicy} className="rounded-[14px] border border-[#E5E7EB] bg-white p-4 shadow-sm">
+        <h3 className="text-[14px] font-semibold text-[#101828]">Expiration Policy</h3>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <label className="text-[12px] font-medium text-[#6A7282]">
+            Hide after days
+            <input
+              className="mt-1 h-10 w-full rounded-[10px] border border-[#E5E7EB] px-3 text-[13px] text-[#101828] outline-none focus:border-[#155DFC]"
+              min="1"
+              type="number"
+              value={draftPolicy.hideAfterDays}
+              onChange={(event) => setDraftPolicy((current) => ({ ...current, hideAfterDays: event.target.value }))}
+            />
+          </label>
+          <label className="text-[12px] font-medium text-[#6A7282]">
+            Delete after days
+            <input
+              className="mt-1 h-10 w-full rounded-[10px] border border-[#E5E7EB] px-3 text-[13px] text-[#101828] outline-none focus:border-[#155DFC]"
+              min="1"
+              type="number"
+              value={draftPolicy.deleteAfterDays}
+              onChange={(event) => setDraftPolicy((current) => ({ ...current, deleteAfterDays: event.target.value }))}
+            />
+          </label>
+        </div>
+        <button type="submit" className="mt-3 h-10 w-full rounded-[10px] bg-[#155DFC] text-[13px] font-medium text-white">
+          Save Configuration
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function PostCard({ post, onHide, onUnhide, onDelete, onReopen }) {
   return (
     <article className="rounded-[14px] border border-[#E5E7EB] bg-white p-[17px] shadow-sm">
       <PostSummary post={post} />
-      {post.claim_details && (
-        <div className="mt-3 rounded-[10px] bg-[#F8FAFC] px-3 py-2 text-[12px] leading-4 text-[#364153]">
-          <p className="font-medium text-[#101828]">
-            Claim by {post.claimant_name || post.claimant_email || `User #${post.claimant_id}`}
-          </p>
-          <p className="mt-1 line-clamp-2">{post.claim_details}</p>
-        </div>
-      )}
-      <div className="mt-3 grid min-h-12 grid-cols-2 gap-2">
+      <div className="mt-3 grid grid-cols-3 gap-2">
         {post.status === 'hidden' ? (
-          <button
-            type="button"
-            onClick={() => onUnhide(post)}
-            className="flex items-center justify-center gap-2 rounded-[10px] bg-[#EFF6FF] px-3 text-[12px] font-medium text-[#1447E6]"
-          >
-            <IconEye />
-            <span>Unhide</span>
-          </button>
+          <SmallActionButton onClick={() => onUnhide(post)} label="Unhide" icon={<IconEye />} tone="blue" />
         ) : (
-          <button
-            type="button"
-            onClick={() => onHide(post)}
-            className="flex items-center justify-center gap-2 rounded-[10px] bg-[#EFF6FF] px-3 text-[12px] font-medium text-[#1447E6]"
-          >
-            <IconEyeOff />
-            <span>Hide</span>
-          </button>
+          <SmallActionButton onClick={() => onHide(post)} label="Hide" icon={<IconEyeOff />} tone="blue" />
         )}
-        {post.status === 'pending_resolution' ? (
-          <button
-            type="button"
-            onClick={() => onResolve(post)}
-            className="flex items-center justify-center gap-2 rounded-[10px] bg-[#EFF6FF] px-3 text-[12px] font-medium text-[#1447E6]"
-          >
-            <IconClipboard />
-            <span>Resolve</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => onDelete(post)}
-            className="flex items-center justify-center gap-2 rounded-[10px] bg-[#FEF2F2] px-3 text-[12px] font-medium text-[#C10007]"
-          >
-            <IconTrash />
-            <span>Delete</span>
-          </button>
-        )}
+        <SmallActionButton onClick={() => onReopen(post)} label="Reopen" icon={<IconRefresh />} tone="gray" disabled={post.status !== 'resolved'} />
+        <SmallActionButton onClick={() => onDelete(post)} label="Delete" icon={<IconTrash />} tone="red" />
       </div>
     </article>
   );
@@ -973,130 +1295,23 @@ function PostSummary({ post }) {
   );
 }
 
-function SmallActionButton({ onClick, label, icon, tone, disabled }) {
-  const toneClasses = {
+function SmallActionButton({ onClick, label, icon, tone, disabled = false }) {
+  const tones = {
     blue: 'bg-[#EFF6FF] text-[#1447E6]',
-    gray: 'bg-[#F3F4F6] text-[#364153]',
     red: 'bg-[#FEF2F2] text-[#C10007]',
+    gray: 'bg-[#F3F4F6] text-[#364153]',
   };
+
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`flex items-center justify-center gap-1.5 rounded-[10px] px-2 py-2 text-[12px] font-medium disabled:cursor-not-allowed disabled:opacity-40 ${toneClasses[tone] || toneClasses.gray}`}
+      className={`flex min-h-11 items-center justify-center gap-1.5 rounded-[10px] px-2 text-center text-[12px] font-medium leading-4 disabled:cursor-not-allowed disabled:opacity-40 ${tones[tone] || tones.gray}`}
     >
-      <span className="h-[14px] w-[14px] shrink-0">{icon}</span>
-      <span>{label}</span>
+      {icon}
+      <span className="truncate">{label}</span>
     </button>
-  );
-}
-
-function ReportsPanel({ reports, loading, onHide, onUnhide, onDelete, onDismiss }) {
-  if (loading) return <EmptyState label="Loading reports..." />;
-  if (!reports.length) return <EmptyState label="No reported posts." />;
-  return (
-    <section className="flex flex-col gap-3">
-      {reports.map((post) => (
-        <ReportCard key={post.id} post={post} onHide={onHide} onUnhide={onUnhide} onDelete={onDelete} onDismiss={onDismiss} />
-      ))}
-    </section>
-  );
-}
-
-function ResolutionsPanel({ posts, loading, onResolve, onReject }) {
-  if (loading) return <EmptyState label="Loading resolutions..." />;
-  if (!posts.length) return <EmptyState label="No posts pending resolution." />;
-  return (
-    <section className="flex flex-col gap-3">
-      {posts.map((post) => (
-        <ResolutionCard key={post.id} post={post} onResolve={onResolve} onReject={onReject} />
-      ))}
-    </section>
-  );
-}
-
-function SettingsPanel({ categories, policy, onAddCategory, onEditCategory, onDeleteCategory, onSavePolicy }) {
-  const [newName, setNewName] = useState('');
-  const [hideAfterDays, setHideAfterDays] = useState(policy.hideAfterDays);
-  const [deleteAfterDays, setDeleteAfterDays] = useState(policy.deleteAfterDays);
-  const [saving, setSaving] = useState(false);
-
-  async function handleAddCategory(e) {
-    e.preventDefault();
-    if (!newName.trim()) return;
-    await onAddCategory(newName);
-    setNewName('');
-  }
-
-  async function handleSavePolicy(e) {
-    e.preventDefault();
-    setSaving(true);
-    await onSavePolicy({ hideAfterDays: Number(hideAfterDays), deleteAfterDays: Number(deleteAfterDays) });
-    setSaving(false);
-  }
-
-  return (
-    <section className="flex flex-col gap-4">
-      <div className="rounded-[14px] border border-[#E5E7EB] bg-white p-[17px] shadow-sm">
-        <h2 className="mb-3 text-[14px] font-semibold text-[#101828]">Categories</h2>
-        <form onSubmit={handleAddCategory} className="mb-3 flex gap-2">
-          <input
-            className="h-10 flex-1 rounded-[10px] border border-[#E5E7EB] px-3 text-[12px] outline-none focus:border-[#155DFC]"
-            placeholder="New category name"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-          />
-          <button type="submit" className="h-10 rounded-[10px] bg-[#155DFC] px-3 text-[12px] font-medium text-white">
-            Add
-          </button>
-        </form>
-        <ul className="space-y-2">
-          {categories.map((cat) => (
-            <li key={cat.id} className="flex items-center justify-between rounded-[10px] bg-[#F9FAFB] px-3 py-2">
-              <span className="text-[12px] text-[#101828]">{cat.name}</span>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => onEditCategory(cat)} className="text-[12px] font-medium text-[#155DFC]">Edit</button>
-                <button type="button" onClick={() => onDeleteCategory(cat)} className="text-[12px] font-medium text-[#C10007]">Delete</button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div className="rounded-[14px] border border-[#E5E7EB] bg-white p-[17px] shadow-sm">
-        <h2 className="mb-3 text-[14px] font-semibold text-[#101828]">Expiration Policy</h2>
-        <form onSubmit={handleSavePolicy} className="space-y-3">
-          <div>
-            <label className="mb-1 block text-[12px] text-[#6A7282]">Hide posts after (days)</label>
-            <input
-              type="number"
-              min={1}
-              className="h-10 w-full rounded-[10px] border border-[#E5E7EB] px-3 text-[12px] outline-none focus:border-[#155DFC]"
-              value={hideAfterDays}
-              onChange={(e) => setHideAfterDays(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-[12px] text-[#6A7282]">Delete posts after (days)</label>
-            <input
-              type="number"
-              min={1}
-              className="h-10 w-full rounded-[10px] border border-[#E5E7EB] px-3 text-[12px] outline-none focus:border-[#155DFC]"
-              value={deleteAfterDays}
-              onChange={(e) => setDeleteAfterDays(e.target.value)}
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={saving}
-            className="h-10 w-full rounded-[10px] bg-[#155DFC] text-[12px] font-medium text-white disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : 'Save Policy'}
-          </button>
-        </form>
-      </div>
-    </section>
   );
 }
 
@@ -1213,6 +1428,87 @@ function IconRefresh() {
     <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12a9 9 0 1 1-3-6.7" />
       <path d="M21 3v6h-6" />
+    </svg>
+  );
+}
+
+function IconSearchSmall() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
+function IconLogout() {
+  return (
+    <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6A2.25 2.25 0 0 0 5.25 5.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15" />
+      <path d="M12 9l-3 3 3 3" />
+      <path d="M9 12h11.25" />
+    </svg>
+  );
+}
+
+function IconSortDown() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 5v12" />
+      <path d="m7 13 4 4 4-4" />
+      <path d="M17 7h4" />
+      <path d="M17 12h3" />
+      <path d="M17 17h2" />
+    </svg>
+  );
+}
+
+function IconSortUp() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 19V7" />
+      <path d="m7 11 4-4 4 4" />
+      <path d="M17 7h2" />
+      <path d="M17 12h3" />
+      <path d="M17 17h4" />
+    </svg>
+  );
+}
+
+function IconSpark() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
+      <path d="m19 15 .9 2.6L22 18.5l-2.1.9L19 22l-.9-2.6-2.1-.9 2.1-.9z" />
+    </svg>
+  );
+}
+
+function IconTag() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.5 13.5 13.5 20.5a2 2 0 0 1-2.8 0L3 12.8V3h9.8l7.7 7.7a2 2 0 0 1 0 2.8Z" />
+      <path d="M7.5 7.5h.01" />
+    </svg>
+  );
+}
+
+function IconCalendar() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 2v4" />
+      <path d="M16 2v4" />
+      <rect width="18" height="18" x="3" y="4" rx="2" />
+      <path d="M3 10h18" />
+    </svg>
+  );
+}
+
+function IconLocation() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 21s7-5.2 7-12a7 7 0 1 0-14 0c0 6.8 7 12 7 12Z" />
+      <circle cx="12" cy="9" r="2.5" />
     </svg>
   );
 }
