@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import MobileLayout from '../components/MobileLayout';
 import api from '../services/api';
 
 const STATUS_LABEL = {
@@ -11,7 +13,8 @@ const STATUS_LABEL = {
 };
 
 export default function ProfilePage() {
-  const { user: authUser, login, token } = useAuth();
+  const { user: authUser, login, token, logout } = useAuth();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [editName, setEditName] = useState('');
@@ -56,94 +59,114 @@ export default function ProfilePage() {
     }
   }
 
+  async function handleLogout() {
+    await logout();
+    navigate('/login', { replace: true });
+  }
+
   if (!profile) {
     return (
-      <div className="flex items-center justify-center min-h-screen text-gray-500">
-        {error || 'Loading...'}
-      </div>
+      <MobileLayout showHeader={false}>
+        <div className="flex h-full items-center justify-center text-slate-400">
+          {error || 'Loading...'}
+        </div>
+      </MobileLayout>
     );
   }
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-8 pb-24">
-      <h1 className="text-2xl font-bold mb-6">My Profile</h1>
-
-      <div className="bg-white rounded-xl shadow p-5 mb-6">
-        <div className="flex items-center gap-4 mb-4">
-          <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center text-2xl font-bold text-blue-600">
-            {(profile.name || profile.email)[0].toUpperCase()}
-          </div>
-          <div>
-            <p className="font-semibold text-lg">{profile.name || '(no name set)'}</p>
-            <p className="text-sm text-gray-500">{profile.email}</p>
-            {profile.role === 'admin' && (
-              <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">Admin</span>
-            )}
-          </div>
+    <MobileLayout showHeader={false}>
+      <div className="px-5 pb-6 pt-6">
+        <div className="mb-5 flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-slate-950">My Profile</h1>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-1.5 rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-100"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+            </svg>
+            Logout
+          </button>
         </div>
 
-        {success && <p className="text-green-600 text-sm mb-2">{success}</p>}
-        {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
+        <div className="mb-5 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center gap-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-100 text-2xl font-bold text-blue-600">
+              {(profile.name || profile.email)[0].toUpperCase()}
+            </div>
+            <div>
+              <p className="font-semibold text-slate-950">{profile.name || '(no name set)'}</p>
+              <p className="text-sm text-slate-500">{profile.email}</p>
+              {profile.role === 'admin' && (
+                <span className="mt-1 inline-block rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">Admin</span>
+              )}
+            </div>
+          </div>
 
-        {editing ? (
-          <form onSubmit={handleSave} className="flex gap-2">
-            <input
-              type="text"
-              value={editName}
-              onChange={e => setEditName(e.target.value)}
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-              placeholder="Your name"
-              maxLength={80}
-              autoFocus
-            />
-            <button
-              type="submit"
-              disabled={saving}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
-            >
-              {saving ? 'Saving…' : 'Save'}
+          {success && <p className="mb-2 text-sm text-green-600">{success}</p>}
+          {error && <p className="mb-2 text-sm text-red-500">{error}</p>}
+
+          {editing ? (
+            <form onSubmit={handleSave} className="flex gap-2">
+              <input
+                type="text"
+                value={editName}
+                onChange={e => setEditName(e.target.value)}
+                className="h-10 flex-1 rounded-xl border border-slate-200 px-3 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                placeholder="Your name"
+                maxLength={80}
+                autoFocus
+              />
+              <button type="submit" disabled={saving}
+                className="h-10 rounded-xl bg-blue-600 px-4 text-sm font-medium text-white disabled:opacity-50">
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+              <button type="button"
+                onClick={() => { setEditing(false); setEditName(profile.name || ''); setError(''); }}
+                className="h-10 rounded-xl border border-slate-200 px-3 text-sm text-slate-600">
+                Cancel
+              </button>
+            </form>
+          ) : (
+            <button onClick={() => { setEditing(true); setSuccess(''); }}
+              className="text-sm font-medium text-blue-600 hover:underline">
+              Edit name
             </button>
-            <button
-              type="button"
-              onClick={() => { setEditing(false); setEditName(profile.name || ''); setError(''); }}
-              className="px-3 py-2 rounded-lg text-sm text-gray-600 border border-gray-300"
-            >
-              Cancel
-            </button>
-          </form>
+          )}
+        </div>
+
+        <h2 className="mb-3 text-base font-semibold text-slate-950">My Posts</h2>
+        {posts.length === 0 ? (
+          <p className="text-sm text-slate-400">You haven't posted anything yet.</p>
         ) : (
-          <button
-            onClick={() => { setEditing(true); setSuccess(''); }}
-            className="text-sm text-blue-600 hover:underline"
-          >
-            Edit name
-          </button>
+          <ul className="space-y-3">
+            {posts.map(post => {
+              const badge = STATUS_LABEL[post.status] || STATUS_LABEL.open;
+              return (
+                <li key={post.id}>
+                  <button
+                    onClick={() => navigate(`/posts/${post.id}`)}
+                    className="w-full rounded-2xl border border-slate-100 bg-white p-4 text-left shadow-sm hover:border-blue-200 hover:shadow-md transition-all"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-sm text-slate-950">{post.title}</p>
+                        <p className="mt-0.5 text-xs text-slate-400">
+                          {new Date(post.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>
+                        {badge.text}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </div>
-
-      <h2 className="text-lg font-semibold mb-3">My Posts</h2>
-      {posts.length === 0 ? (
-        <p className="text-gray-400 text-sm">You haven't posted anything yet.</p>
-      ) : (
-        <ul className="space-y-3">
-          {posts.map(post => {
-            const badge = STATUS_LABEL[post.status] || STATUS_LABEL.open;
-            return (
-              <li key={post.id} className="bg-white rounded-xl shadow p-4 flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-medium text-sm leading-snug">{post.title}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {new Date(post.created_at).toLocaleDateString()}
-                  </p>
-                </div>
-                <span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${badge.cls}`}>
-                  {badge.text}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
+    </MobileLayout>
   );
 }
