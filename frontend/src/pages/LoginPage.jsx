@@ -35,7 +35,7 @@ export default function LoginPage() {
     try {
       const { data } = await api.post('/auth/verify-otp', { email, otp });
       login(data.token, data.user);
-      navigate('/');
+      navigate(data.user?.role === 'admin' ? '/admin' : '/');
     } catch (err) {
       setError(err.response?.data?.error || 'Invalid OTP');
     } finally {
