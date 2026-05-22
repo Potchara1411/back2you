@@ -4,7 +4,7 @@ import { HomeIcon, PlusIcon, SearchIcon, UserIcon } from './Icons';
 const navItems = [
   { to: '/', label: 'Home', icon: HomeIcon },
   { to: '/search', label: 'Search', icon: SearchIcon },
-  { to: '/create', label: 'Post', icon: PlusIcon },
+  { to: '/posts/new', label: 'Post', icon: PlusIcon },
   { to: '/profile', label: 'Profile', icon: UserIcon },
 ];
 

@@ -35,7 +35,7 @@ export default function PostCard({ post }) {
 
   return (
     <Link
-      to={`/post/${post.id}`}
+      to={`/posts/${post.id}`}
       className="block overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_2px_8px_rgba(15,23,42,0.16)] transition active:scale-[0.99]"
     >
       <div className="relative h-48 bg-slate-100">
