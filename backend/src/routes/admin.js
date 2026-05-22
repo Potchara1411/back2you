@@ -10,7 +10,10 @@ router.use(authMiddleware, adminMiddleware);
 router.get('/posts', adminController.listAllPosts);
 router.get('/claims', adminController.listClaims);
 router.patch('/posts/:id/hide', adminController.hidePostByAdmin);
+router.patch('/posts/:id/unhide', adminController.unhidePostByAdmin);
 router.patch('/posts/:id/resolve', adminController.resolvePostByAdmin);
+router.patch('/posts/:id/reopen', adminController.reopenPostByAdmin);
+router.patch('/posts/:id/reject-resolution', adminController.rejectResolutionByAdmin);
 router.delete('/posts/:id', adminController.deletePostByAdmin);
 router.patch('/claims/:id/:status', adminController.updateClaimStatus);
 
