@@ -62,3 +62,10 @@ CREATE TABLE IF NOT EXISTS reports (
   reason TEXT,
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+-- System settings table
+CREATE TABLE IF NOT EXISTS system_settings (
+  key VARCHAR(100) PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW()
+);
