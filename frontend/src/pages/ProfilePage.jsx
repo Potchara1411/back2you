@@ -13,7 +13,7 @@ const STATUS_LABEL = {
 };
 
 export default function ProfilePage() {
-  const { login, token, logout } = useAuth();
+  const { login, logout, token } = useAuth();
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);

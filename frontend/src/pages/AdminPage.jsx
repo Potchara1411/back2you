@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
 const previewPosts = [
@@ -130,6 +132,63 @@ function matchesFilter(post, filter) {
   return true;
 }
 
+function getSearchText(post) {
+  return [
+    post.title,
+    post.description,
+    post.location,
+    post.category_name,
+    post.category,
+    post.owner_name,
+    post.owner_email,
+    post.status,
+    post.type,
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function matchesSearch(post, keyword) {
+  const normalizedKeyword = keyword.trim().toLowerCase();
+  if (!normalizedKeyword) return true;
+  return getSearchText(post).includes(normalizedKeyword);
+}
+
+function matchesAdminPostFilters(post, advancedFilters) {
+  const category = (post.category_name || post.category || '').toLowerCase();
+  const location = (post.location || '').toLowerCase();
+  const postDate = (post.date_occurred || post.created_at || '').slice(0, 10);
+
+  if (advancedFilters.category && category !== advancedFilters.category.toLowerCase()) {
+    return false;
+  }
+  if (advancedFilters.date && postDate !== advancedFilters.date) {
+    return false;
+  }
+  if (advancedFilters.location && !location.includes(advancedFilters.location.toLowerCase())) {
+    return false;
+  }
+  return true;
+}
+
+function getAdminRelevanceScore(post, keyword) {
+  const normalizedKeyword = keyword.trim().toLowerCase();
+  if (!normalizedKeyword) return 0;
+
+  const title = post.title?.toLowerCase() || '';
+  const description = post.description?.toLowerCase() || '';
+  const category = (post.category_name || post.category || '').toLowerCase();
+  const location = post.location?.toLowerCase() || '';
+  const owner = `${post.owner_name || ''} ${post.owner_email || ''}`.toLowerCase();
+
+  if (title === normalizedKeyword) return 100;
+  if (title.startsWith(normalizedKeyword)) return 90;
+  if (title.includes(normalizedKeyword)) return 80;
+  if (description.includes(normalizedKeyword)) return 50;
+  if (category.includes(normalizedKeyword)) return 35;
+  if (location.includes(normalizedKeyword)) return 25;
+  if (owner.includes(normalizedKeyword)) return 15;
+  return 0;
+}
+
 function userDisplayId(user) {
   return String(user.id).replace(/^user-/, '');
 }
@@ -158,6 +217,8 @@ function normalizeReportRows(rows) {
 }
 
 export default function AdminPage() {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
   const [posts, setPosts] = useState([]);
   const [users, setUsers] = useState([]);
   const [reports, setReports] = useState([]);
@@ -165,6 +226,10 @@ export default function AdminPage() {
   const [categories, setCategories] = useState([]);
   const [policy, setPolicy] = useState({ hideAfterDays: 45, deleteAfterDays: 60 });
   const [activeFilter, setActiveFilter] = useState('all');
+  const [postKeyword, setPostKeyword] = useState('');
+  const [postAdvancedFilters, setPostAdvancedFilters] = useState({ category: '', date: '', location: '' });
+  const [openPostFilter, setOpenPostFilter] = useState('');
+  const [postSortBy, setPostSortBy] = useState('newest');
   const [activeSection, setActiveSection] = useState('posts');
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState('');
@@ -174,6 +239,14 @@ export default function AdminPage() {
   const reportedPreview = useMemo(
     () => normalizeReportRows(previewPosts.filter((post) => Number(post.report_count) > 0)),
     [],
+  );
+
+  const postCategoryOptions = useMemo(
+    () => Array.from(new Set([
+      ...categories.map((category) => category.name),
+      ...posts.map((post) => post.category_name || post.category),
+    ].filter(Boolean))).sort(),
+    [categories, posts],
   );
 
   async function loadPosts({ showLoading = true } = {}) {
@@ -248,9 +321,31 @@ export default function AdminPage() {
   }, []);
 
   const filteredPosts = useMemo(
-    () => posts.filter((post) => matchesFilter(post, activeFilter)),
-    [activeFilter, posts],
+    () => posts
+      .filter((post) => matchesFilter(post, activeFilter))
+      .filter((post) => matchesSearch(post, postKeyword))
+      .filter((post) => matchesAdminPostFilters(post, postAdvancedFilters))
+      .sort((firstPost, secondPost) => {
+        if (postSortBy === 'oldest') {
+          return new Date(firstPost.created_at) - new Date(secondPost.created_at);
+        }
+        if (postSortBy === 'relevance') {
+          const scoreDifference = getAdminRelevanceScore(secondPost, postKeyword) - getAdminRelevanceScore(firstPost, postKeyword);
+          if (scoreDifference !== 0) return scoreDifference;
+        }
+        return new Date(secondPost.created_at) - new Date(firstPost.created_at);
+      }),
+    [activeFilter, postAdvancedFilters, postKeyword, postSortBy, posts],
   );
+
+  function updatePostAdvancedFilter(key, value) {
+    setPostAdvancedFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function clearPostAdvancedFilters() {
+    setPostAdvancedFilters({ category: '', date: '', location: '' });
+    setOpenPostFilter('');
+  }
 
   function updatePostEverywhere(postId, updater) {
     setPosts((current) => current.map((item) => (item.id === postId ? updater(item) : item)));
@@ -545,6 +640,11 @@ export default function AdminPage() {
     }
   }
 
+  async function handleLogout() {
+    await logout();
+    navigate('/login', { replace: true });
+  }
+
   return (
     <main className="min-h-screen bg-white text-[#101828]" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
       <div className="flex min-h-screen items-center justify-center px-0 py-0 sm:px-6 sm:py-6">
@@ -552,7 +652,7 @@ export default function AdminPage() {
           <PhoneStatusBar />
 
           <div className="flex min-h-0 flex-1 flex-col bg-white">
-            <AppHeader onRefresh={() => loadAdminData()} />
+            <AppHeader onRefresh={() => loadAdminData()} onLogout={handleLogout} />
             <SectionHeader activeSection={activeSection} />
 
             {notice && (
@@ -566,8 +666,18 @@ export default function AdminPage() {
                 <PostsPanel
                   posts={filteredPosts}
                   activeFilter={activeFilter}
+                  keyword={postKeyword}
+                  advancedFilters={postAdvancedFilters}
+                  categoryOptions={postCategoryOptions}
+                  openFilter={openPostFilter}
+                  sortBy={postSortBy}
                   loading={loading}
                   onFilterChange={setActiveFilter}
+                  onKeywordChange={setPostKeyword}
+                  onAdvancedFilterChange={updatePostAdvancedFilter}
+                  onClearAdvancedFilters={clearPostAdvancedFilters}
+                  onOpenFilterChange={setOpenPostFilter}
+                  onSortChange={setPostSortBy}
                   onHide={hidePost}
                   onUnhide={unhidePost}
                   onDelete={deletePost}
@@ -633,7 +743,7 @@ function PhoneStatusBar() {
   );
 }
 
-function AppHeader({ onRefresh }) {
+function AppHeader({ onRefresh, onLogout }) {
   return (
     <header className="flex h-[61px] shrink-0 items-center border-b border-[#F3F4F6] bg-white px-5">
       <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -644,14 +754,24 @@ function AppHeader({ onRefresh }) {
           Admin Console
         </h1>
       </div>
-      <button
-        type="button"
-        onClick={onRefresh}
-        aria-label="Refresh admin data"
-        className="flex h-8 w-8 items-center justify-center rounded-full bg-[#EFF6FF] text-[#155DFC]"
-      >
-        <IconRefresh />
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onRefresh}
+          aria-label="Refresh admin data"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-[#EFF6FF] text-[#155DFC]"
+        >
+          <IconRefresh />
+        </button>
+        <button
+          type="button"
+          onClick={onLogout}
+          aria-label="Log out"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-[#FEF2F2] text-[#C10007]"
+        >
+          <IconLogout />
+        </button>
+      </div>
     </header>
   );
 }
@@ -788,21 +908,81 @@ function UserCard({ user, tone, onShowActivity, onToggleBlock, onSendNotice }) {
   );
 }
 
-function PostsPanel({ posts, activeFilter, loading, onFilterChange, onHide, onUnhide, onDelete, onReopen }) {
+function SearchField({ value, onChange, placeholder = 'Search admin posts...' }) {
+  return (
+    <label className="flex h-12 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-slate-400">
+      <IconSearchSmall />
+      <input
+        className="min-w-0 flex-1 bg-transparent text-base text-slate-950 outline-none placeholder:text-slate-400"
+        name="keyword"
+        placeholder={placeholder}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
+function PostsPanel({
+  posts,
+  activeFilter,
+  keyword,
+  advancedFilters,
+  categoryOptions,
+  openFilter,
+  sortBy,
+  loading,
+  onFilterChange,
+  onKeywordChange,
+  onAdvancedFilterChange,
+  onClearAdvancedFilters,
+  onOpenFilterChange,
+  onSortChange,
+  onHide,
+  onUnhide,
+  onDelete,
+  onReopen,
+}) {
   if (loading) {
     return <EmptyState label="Loading posts..." />;
   }
 
   return (
-    <section className="flex flex-col gap-3">
+    <section className="flex flex-col gap-4">
+      <form onSubmit={(event) => event.preventDefault()}>
+        <SearchField value={keyword} onChange={onKeywordChange} />
+      </form>
+
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          { id: 'newest', label: 'Newest First', icon: <IconSortDown /> },
+          { id: 'oldest', label: 'Oldest First', icon: <IconSortUp /> },
+          { id: 'relevance', label: 'Relevance', icon: <IconSpark /> },
+        ].map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            onClick={() => onSortChange(option.id)}
+            className={`min-h-[76px] rounded-[14px] border px-2 py-2 text-[12px] font-semibold ${
+              sortBy === option.id
+                ? 'border-blue-200 bg-blue-50 text-blue-600'
+                : 'border-slate-200 bg-slate-50 text-slate-600'
+            }`}
+          >
+            <span className="mx-auto mb-1 flex h-5 w-5 items-center justify-center">{option.icon}</span>
+            {option.label}
+          </button>
+        ))}
+      </div>
+
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
         {filters.map((filter) => (
           <button
             type="button"
             key={filter.id}
             onClick={() => onFilterChange(filter.id)}
-            className={`shrink-0 rounded-[10px] px-3 py-2 text-[12px] font-medium ${
-              activeFilter === filter.id ? 'bg-[#155DFC] text-white' : 'bg-[#F3F4F6] text-[#6A7282]'
+            className={`shrink-0 rounded-full px-3 py-2 text-[12px] font-semibold ${
+              activeFilter === filter.id ? 'bg-[#155DFC] text-white' : 'bg-slate-100 text-slate-600'
             }`}
           >
             {filter.label}
@@ -810,12 +990,89 @@ function PostsPanel({ posts, activeFilter, loading, onFilterChange, onHide, onUn
         ))}
       </div>
 
+      <div className="grid grid-cols-4 gap-2">
+        {[
+          { id: 'category', label: advancedFilters.category || 'Category', icon: <IconTag /> },
+          { id: 'date', label: advancedFilters.date || 'Date', icon: <IconCalendar /> },
+          { id: 'location', label: advancedFilters.location || 'Location', icon: <IconLocation /> },
+        ].map((filter) => {
+          const selected = Boolean(advancedFilters[filter.id]);
+          return (
+            <button
+              key={filter.id}
+              type="button"
+              onClick={() => onOpenFilterChange(openFilter === filter.id ? '' : filter.id)}
+              className={`min-h-[62px] rounded-[14px] border px-2 py-2 text-[12px] font-semibold ${
+                openFilter === filter.id
+                  ? 'border-blue-200 bg-blue-50 text-blue-600'
+                  : selected
+                    ? 'border-blue-100 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 bg-white text-slate-600'
+              }`}
+            >
+              <span className="mx-auto mb-1 flex h-5 w-5 items-center justify-center">{filter.icon}</span>
+              <span className="block truncate">{filter.label}</span>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={onClearAdvancedFilters}
+          className="min-h-[62px] rounded-[14px] border border-slate-200 bg-white px-2 py-2 text-[12px] font-semibold text-slate-600"
+        >
+          Clear
+        </button>
+      </div>
+
+      {openFilter && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+          {openFilter === 'category' && (
+            <select
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
+              value={advancedFilters.category}
+              onChange={(event) => onAdvancedFilterChange('category', event.target.value)}
+            >
+              <option value="">All categories</option>
+              {categoryOptions.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {openFilter === 'date' && (
+            <input
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
+              type="date"
+              value={advancedFilters.date}
+              onChange={(event) => onAdvancedFilterChange('date', event.target.value)}
+            />
+          )}
+
+          {openFilter === 'location' && (
+            <input
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
+              value={advancedFilters.location}
+              onChange={(event) => onAdvancedFilterChange('location', event.target.value)}
+              placeholder="Building, area, or room"
+            />
+          )}
+        </div>
+      )}
+
+      <div className="border-t border-slate-100 pt-4">
+        <p className="text-[14px] font-medium text-slate-500">
+          {posts.length} result{posts.length === 1 ? '' : 's'}
+        </p>
+      </div>
+
       {posts.length ? (
         posts.map((post) => (
           <PostCard key={post.id} post={post} onHide={onHide} onUnhide={onUnhide} onDelete={onDelete} onReopen={onReopen} />
         ))
       ) : (
-        <EmptyState label="No posts found." />
+        <EmptyState label={keyword ? 'No posts match your search.' : 'No posts found.'} />
       )}
     </section>
   );
@@ -1171,6 +1428,87 @@ function IconRefresh() {
     <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12a9 9 0 1 1-3-6.7" />
       <path d="M21 3v6h-6" />
+    </svg>
+  );
+}
+
+function IconSearchSmall() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
+function IconLogout() {
+  return (
+    <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6A2.25 2.25 0 0 0 5.25 5.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15" />
+      <path d="M12 9l-3 3 3 3" />
+      <path d="M9 12h11.25" />
+    </svg>
+  );
+}
+
+function IconSortDown() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 5v12" />
+      <path d="m7 13 4 4 4-4" />
+      <path d="M17 7h4" />
+      <path d="M17 12h3" />
+      <path d="M17 17h2" />
+    </svg>
+  );
+}
+
+function IconSortUp() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 19V7" />
+      <path d="m7 11 4-4 4 4" />
+      <path d="M17 7h2" />
+      <path d="M17 12h3" />
+      <path d="M17 17h4" />
+    </svg>
+  );
+}
+
+function IconSpark() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
+      <path d="m19 15 .9 2.6L22 18.5l-2.1.9L19 22l-.9-2.6-2.1-.9 2.1-.9z" />
+    </svg>
+  );
+}
+
+function IconTag() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.5 13.5 13.5 20.5a2 2 0 0 1-2.8 0L3 12.8V3h9.8l7.7 7.7a2 2 0 0 1 0 2.8Z" />
+      <path d="M7.5 7.5h.01" />
+    </svg>
+  );
+}
+
+function IconCalendar() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 2v4" />
+      <path d="M16 2v4" />
+      <rect width="18" height="18" x="3" y="4" rx="2" />
+      <path d="M3 10h18" />
+    </svg>
+  );
+}
+
+function IconLocation() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 21s7-5.2 7-12a7 7 0 1 0-14 0c0 6.8 7 12 7 12Z" />
+      <circle cx="12" cy="9" r="2.5" />
     </svg>
   );
 }

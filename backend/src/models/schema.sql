@@ -69,14 +69,3 @@ CREATE TABLE IF NOT EXISTS system_settings (
   value TEXT NOT NULL,
   updated_at TIMESTAMP DEFAULT NOW()
 );
-
--- Claim requests table
-CREATE TABLE IF NOT EXISTS claim_requests (
-  id SERIAL PRIMARY KEY,
-  post_id INT REFERENCES posts(id) ON DELETE CASCADE,
-  claimant_id INT REFERENCES users(id) ON DELETE CASCADE,
-  details TEXT NOT NULL,
-  status VARCHAR(50) DEFAULT 'pending',     -- pending, approved, rejected
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
