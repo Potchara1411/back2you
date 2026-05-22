@@ -63,6 +63,13 @@ CREATE TABLE IF NOT EXISTS reports (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- System settings table
+CREATE TABLE IF NOT EXISTS system_settings (
+  key VARCHAR(100) PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
 -- Claim requests table
 CREATE TABLE IF NOT EXISTS claim_requests (
   id SERIAL PRIMARY KEY,
