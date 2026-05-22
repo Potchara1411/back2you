@@ -4,12 +4,21 @@ const pool = require('../models/db');
 const transporter = require('../utils/mailer');
 
 const OTP_EXPIRY_MINUTES = 10;
+const MOCK_OTP = '123456';
+
+function useMockAuth() {
+  return process.env.MOCK_AUTH === 'true' || process.env.USE_MOCK_DATA === 'true';
+}
 
 async function requestOtp(req, res) {
   const { email } = req.body;
 
   if (!email || !email.endsWith('@kaist.ac.kr')) {
     return res.status(400).json({ error: 'Must use a @kaist.ac.kr email' });
+  }
+
+  if (useMockAuth()) {
+    return res.json({ message: 'OTP sent', devOtp: MOCK_OTP });
   }
 
   const otp = crypto.randomInt(100000, 999999).toString();
@@ -38,6 +47,22 @@ async function verifyOtp(req, res) {
 
   if (!email || !otp) {
     return res.status(400).json({ error: 'Email and OTP are required' });
+  }
+
+  if (useMockAuth()) {
+    if (otp !== MOCK_OTP) {
+      return res.status(401).json({ error: 'Invalid OTP' });
+    }
+
+    const user = {
+      id: 1,
+      email,
+      name: email.split('@')[0],
+      role: email.startsWith('admin') ? 'admin' : 'user',
+    };
+    const token = jwt.sign(user, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+    return res.json({ token, user });
   }
 
   const { rows } = await pool.query(

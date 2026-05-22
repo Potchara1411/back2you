@@ -81,6 +81,10 @@ const mockPosts = [
   },
 ];
 
+export function getMockPost(id) {
+  return mockPosts.find((post) => String(post.id) === String(id));
+}
+
 function paginate(posts, page, limit) {
   const start = (page - 1) * limit;
 
