@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarIcon, ChevronLeftIcon, LocationIcon, PlusIcon, TagIcon } from '../components/Icons';
 import MobileLayout from '../components/MobileLayout';
@@ -185,6 +185,12 @@ export default function CreatePostPage() {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    api.get('/posts/categories')
+      .then(({ data }) => setCategories(data.map(c => ({ id: c.id, label: c.name }))))
+      .catch(() => {});
+  }, []);
 
   const selectedCategory = useMemo(
     () => categories.find((category) => String(category.id) === String(form.category_id)),
