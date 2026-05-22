@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
 const previewPosts = [
@@ -162,6 +164,8 @@ function normalizeReportRows(rows) {
 }
 
 export default function AdminPage() {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
   const [posts, setPosts] = useState([]);
   const [users, setUsers] = useState([]);
   const [reports, setReports] = useState([]);
@@ -250,6 +254,11 @@ export default function AdminPage() {
     void Promise.resolve().then(() => loadAdminData({ showLoading: false }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (activeSection === 'settings') loadSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection]);
 
   const filteredPosts = useMemo(
     () => posts.filter((post) => matchesFilter(post, activeFilter)),
@@ -347,6 +356,25 @@ export default function AdminPage() {
       setNotice(`${data.dismissedCount || 0} report(s) dismissed.`);
     } catch (error) {
       setNotice(error.response?.data?.error || 'Failed to dismiss report.');
+    }
+  }
+
+  async function unhidePost(post) {
+    const confirmed = window.confirm('Unhide this post and make it visible again?');
+    if (!confirmed) return;
+
+    if (isPreview) {
+      updatePostEverywhere(post.id, (item) => ({ ...item, status: 'open' }));
+      setNotice('Preview post unhidden locally.');
+      return;
+    }
+
+    try {
+      const { data } = await api.patch(`/admin/posts/${post.id}/unhide`);
+      updatePostEverywhere(post.id, (item) => ({ ...item, ...data.post, status: 'open' }));
+      setNotice(data.noticeSent ? 'Post unhidden and owner notified.' : 'Post unhidden.');
+    } catch (error) {
+      setNotice(error.response?.data?.error || 'Failed to unhide post.');
     }
   }
 
@@ -483,13 +511,6 @@ export default function AdminPage() {
   async function addCategory(name) {
     const trimmed = name.trim();
     if (!trimmed) return;
-
-    if (isPreview) {
-      setCategories((current) => [...current, { id: `preview-${Date.now()}`, name: trimmed, active_post_count: 0, total_post_count: 0 }]);
-      setNotice('Preview category added.');
-      return;
-    }
-
     try {
       const { data } = await api.post('/admin/categories', { name: trimmed });
       setCategories((current) => [...current, { ...data.category, active_post_count: 0, total_post_count: 0 }]);
@@ -502,13 +523,6 @@ export default function AdminPage() {
   async function editCategory(category) {
     const nextName = window.prompt('Rename category', category.name);
     if (!nextName?.trim() || nextName.trim() === category.name) return;
-
-    if (isPreview) {
-      setCategories((current) => current.map((item) => (item.id === category.id ? { ...item, name: nextName.trim() } : item)));
-      setNotice('Preview category renamed.');
-      return;
-    }
-
     try {
       const { data } = await api.patch(`/admin/categories/${category.id}`, { name: nextName.trim() });
       setCategories((current) => current.map((item) => (item.id === category.id ? { ...item, ...data.category } : item)));
@@ -521,13 +535,6 @@ export default function AdminPage() {
   async function deleteCategory(category) {
     const confirmed = window.confirm(`Delete ${category.name}? Active posts will be reassigned to Other.`);
     if (!confirmed) return;
-
-    if (isPreview) {
-      setCategories((current) => current.filter((item) => item.id !== category.id));
-      setNotice('Preview category deleted.');
-      return;
-    }
-
     try {
       const { data } = await api.delete(`/admin/categories/${category.id}`);
       setCategories((current) => current.filter((item) => item.id !== category.id));
@@ -538,12 +545,6 @@ export default function AdminPage() {
   }
 
   async function savePolicy(nextPolicy) {
-    if (isPreview) {
-      setPolicy(nextPolicy);
-      setNotice('Preview policy saved locally.');
-      return;
-    }
-
     try {
       const { data } = await api.put('/admin/settings/expiration-policy', nextPolicy);
       setPolicy(data.policy);
@@ -560,7 +561,7 @@ export default function AdminPage() {
           <PhoneStatusBar />
 
           <div className="flex min-h-0 flex-1 flex-col bg-white">
-            <AppHeader onRefresh={() => loadAdminData()} />
+            <AppHeader onRefresh={() => loadAdminData()} onLogout={async () => { await logout(); navigate('/login', { replace: true }); }} />
             <SectionHeader activeSection={activeSection} />
 
             {notice && (
@@ -577,6 +578,7 @@ export default function AdminPage() {
                   loading={loading}
                   onFilterChange={setActiveFilter}
                   onHide={hidePost}
+                  onUnhide={unhidePost}
                   onResolve={resolvePost}
                   onDelete={deletePost}
                   onReopen={reopenPost}
@@ -641,7 +643,7 @@ function PhoneStatusBar() {
   );
 }
 
-function AppHeader({ onRefresh }) {
+function AppHeader({ onRefresh, onLogout }) {
   return (
     <header className="flex h-[61px] shrink-0 items-center border-b border-[#F3F4F6] bg-white px-5">
       <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -652,14 +654,24 @@ function AppHeader({ onRefresh }) {
           Admin Console
         </h1>
       </div>
-      <button
-        type="button"
-        onClick={onRefresh}
-        aria-label="Refresh admin data"
-        className="flex h-8 w-8 items-center justify-center rounded-full bg-[#EFF6FF] text-[#155DFC]"
-      >
-        <IconRefresh />
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onRefresh}
+          aria-label="Refresh admin data"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-[#EFF6FF] text-[#155DFC]"
+        >
+          <IconRefresh />
+        </button>
+        <button
+          type="button"
+          onClick={onLogout}
+          aria-label="Logout"
+          className="flex h-8 items-center gap-1 rounded-full bg-[#FEF2F2] px-3 text-[12px] font-medium text-[#C10007]"
+        >
+          Logout
+        </button>
+      </div>
     </header>
   );
 }
@@ -796,7 +808,7 @@ function UserCard({ user, tone, onShowActivity, onToggleBlock, onSendNotice }) {
   );
 }
 
-function PostsPanel({ posts, activeFilter, loading, onFilterChange, onHide, onResolve, onDelete }) {
+function PostsPanel({ posts, activeFilter, loading, onFilterChange, onHide, onUnhide, onResolve, onDelete }) {
   if (loading) {
     return <EmptyState label="Loading posts..." />;
   }
@@ -820,7 +832,7 @@ function PostsPanel({ posts, activeFilter, loading, onFilterChange, onHide, onRe
 
       {posts.length ? (
         posts.map((post) => (
-          <PostCard key={post.id} post={post} onHide={onHide} onResolve={onResolve} onDelete={onDelete} />
+          <PostCard key={post.id} post={post} onHide={onHide} onUnhide={onUnhide} onResolve={onResolve} onDelete={onDelete} />
         ))
       ) : (
         <EmptyState label="No posts found." />
@@ -829,18 +841,57 @@ function PostsPanel({ posts, activeFilter, loading, onFilterChange, onHide, onRe
   );
 }
 
-function PostCard({ post, onHide, onResolve, onDelete }) {
+function PostCard({ post, onHide, onUnhide, onResolve, onDelete }) {
   return (
     <article className="rounded-[14px] border border-[#E5E7EB] bg-white p-[17px] shadow-sm">
       <PostSummary post={post} />
-      <div className="mt-3 grid grid-cols-3 gap-2">
+      {post.claim_details && (
+        <div className="mt-3 rounded-[10px] bg-[#F8FAFC] px-3 py-2 text-[12px] leading-4 text-[#364153]">
+          <p className="font-medium text-[#101828]">
+            Claim by {post.claimant_name || post.claimant_email || `User #${post.claimant_id}`}
+          </p>
+          <p className="mt-1 line-clamp-2">{post.claim_details}</p>
+        </div>
+      )}
+      <div className="mt-3 grid min-h-12 grid-cols-2 gap-2">
         {post.status === 'hidden' ? (
-          <SmallActionButton onClick={() => onUnhide(post)} label="Unhide" icon={<IconEye />} tone="blue" />
+          <button
+            type="button"
+            onClick={() => onUnhide(post)}
+            className="flex items-center justify-center gap-2 rounded-[10px] bg-[#EFF6FF] px-3 text-[12px] font-medium text-[#1447E6]"
+          >
+            <IconEye />
+            <span>Unhide</span>
+          </button>
         ) : (
-          <SmallActionButton onClick={() => onHide(post)} label="Hide" icon={<IconEyeOff />} tone="blue" />
+          <button
+            type="button"
+            onClick={() => onHide(post)}
+            className="flex items-center justify-center gap-2 rounded-[10px] bg-[#EFF6FF] px-3 text-[12px] font-medium text-[#1447E6]"
+          >
+            <IconEyeOff />
+            <span>Hide</span>
+          </button>
         )}
-        <SmallActionButton onClick={() => onReopen(post)} label="Reopen" icon={<IconRefresh />} tone="gray" disabled={post.status !== 'resolved'} />
-        <SmallActionButton onClick={() => onDelete(post)} label="Delete" icon={<IconTrash />} tone="red" />
+        {post.status === 'pending_resolution' ? (
+          <button
+            type="button"
+            onClick={() => onResolve(post)}
+            className="flex items-center justify-center gap-2 rounded-[10px] bg-[#EFF6FF] px-3 text-[12px] font-medium text-[#1447E6]"
+          >
+            <IconClipboard />
+            <span>Resolve</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onDelete(post)}
+            className="flex items-center justify-center gap-2 rounded-[10px] bg-[#FEF2F2] px-3 text-[12px] font-medium text-[#C10007]"
+          >
+            <IconTrash />
+            <span>Delete</span>
+          </button>
+        )}
       </div>
     </article>
   );
@@ -923,46 +974,130 @@ function PostSummary({ post }) {
   );
 }
 
-      {post.claim_details && (
-        <div className="mt-3 rounded-[10px] bg-[#F8FAFC] px-3 py-2 text-[12px] leading-4 text-[#364153]">
-          <p className="font-medium text-[#101828]">
-            Claim by {post.claimant_name || post.claimant_email || `User #${post.claimant_id}`}
-          </p>
-          <p className="mt-1 line-clamp-2">{post.claim_details}</p>
-        </div>
-      )}
+function SmallActionButton({ onClick, label, icon, tone, disabled }) {
+  const toneClasses = {
+    blue: 'bg-[#EFF6FF] text-[#1447E6]',
+    gray: 'bg-[#F3F4F6] text-[#364153]',
+    red: 'bg-[#FEF2F2] text-[#C10007]',
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex items-center justify-center gap-1.5 rounded-[10px] px-2 py-2 text-[12px] font-medium disabled:cursor-not-allowed disabled:opacity-40 ${toneClasses[tone] || toneClasses.gray}`}
+    >
+      <span className="h-[14px] w-[14px] shrink-0">{icon}</span>
+      <span>{label}</span>
+    </button>
+  );
+}
 
-      <div className="mt-3 grid min-h-12 grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => onHide(post)}
-          disabled={post.status === 'hidden'}
-          className="flex items-center justify-center gap-2 rounded-[10px] bg-[#EFF6FF] px-3 text-[12px] font-medium text-[#1447E6] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <IconEyeOff />
-          <span>Hide</span>
-        </button>
-        {post.status === 'pending_resolution' ? (
-          <button
-            type="button"
-            onClick={() => onResolve(post)}
-            className="flex items-center justify-center gap-2 rounded-[10px] bg-[#EFF6FF] px-3 text-[12px] font-medium text-[#1447E6]"
-          >
-            <IconClipboard />
-            <span>Resolve</span>
+function ReportsPanel({ reports, loading, onHide, onUnhide, onDelete, onDismiss }) {
+  if (loading) return <EmptyState label="Loading reports..." />;
+  if (!reports.length) return <EmptyState label="No reported posts." />;
+  return (
+    <section className="flex flex-col gap-3">
+      {reports.map((post) => (
+        <ReportCard key={post.id} post={post} onHide={onHide} onUnhide={onUnhide} onDelete={onDelete} onDismiss={onDismiss} />
+      ))}
+    </section>
+  );
+}
+
+function ResolutionsPanel({ posts, loading, onResolve, onReject }) {
+  if (loading) return <EmptyState label="Loading resolutions..." />;
+  if (!posts.length) return <EmptyState label="No posts pending resolution." />;
+  return (
+    <section className="flex flex-col gap-3">
+      {posts.map((post) => (
+        <ResolutionCard key={post.id} post={post} onResolve={onResolve} onReject={onReject} />
+      ))}
+    </section>
+  );
+}
+
+function SettingsPanel({ categories, policy, onAddCategory, onEditCategory, onDeleteCategory, onSavePolicy }) {
+  const [newName, setNewName] = useState('');
+  const [hideAfterDays, setHideAfterDays] = useState(policy.hideAfterDays);
+  const [deleteAfterDays, setDeleteAfterDays] = useState(policy.deleteAfterDays);
+  const [saving, setSaving] = useState(false);
+
+  async function handleAddCategory(e) {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    await onAddCategory(newName);
+    setNewName('');
+  }
+
+  async function handleSavePolicy(e) {
+    e.preventDefault();
+    setSaving(true);
+    await onSavePolicy({ hideAfterDays: Number(hideAfterDays), deleteAfterDays: Number(deleteAfterDays) });
+    setSaving(false);
+  }
+
+  return (
+    <section className="flex flex-col gap-4">
+      <div className="rounded-[14px] border border-[#E5E7EB] bg-white p-[17px] shadow-sm">
+        <h2 className="mb-3 text-[14px] font-semibold text-[#101828]">Categories</h2>
+        <form onSubmit={handleAddCategory} className="mb-3 flex gap-2">
+          <input
+            className="h-10 flex-1 rounded-[10px] border border-[#E5E7EB] px-3 text-[12px] outline-none focus:border-[#155DFC]"
+            placeholder="New category name"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+          />
+          <button type="submit" className="h-10 rounded-[10px] bg-[#155DFC] px-3 text-[12px] font-medium text-white">
+            Add
           </button>
-        ) : (
-        <button
-          type="button"
-          onClick={() => onDelete(post)}
-          className="flex items-center justify-center gap-2 rounded-[10px] bg-[#FEF2F2] px-3 text-[12px] font-medium text-[#C10007]"
-        >
-          <IconTrash />
-          <span>Delete</span>
-        </button>
-        )}
+        </form>
+        <ul className="space-y-2">
+          {categories.map((cat) => (
+            <li key={cat.id} className="flex items-center justify-between rounded-[10px] bg-[#F9FAFB] px-3 py-2">
+              <span className="text-[12px] text-[#101828]">{cat.name}</span>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => onEditCategory(cat)} className="text-[12px] font-medium text-[#155DFC]">Edit</button>
+                <button type="button" onClick={() => onDeleteCategory(cat)} className="text-[12px] font-medium text-[#C10007]">Delete</button>
+              </div>
+            </li>
+          ))}
+        </ul>
       </div>
-    </article>
+
+      <div className="rounded-[14px] border border-[#E5E7EB] bg-white p-[17px] shadow-sm">
+        <h2 className="mb-3 text-[14px] font-semibold text-[#101828]">Expiration Policy</h2>
+        <form onSubmit={handleSavePolicy} className="space-y-3">
+          <div>
+            <label className="mb-1 block text-[12px] text-[#6A7282]">Hide posts after (days)</label>
+            <input
+              type="number"
+              min={1}
+              className="h-10 w-full rounded-[10px] border border-[#E5E7EB] px-3 text-[12px] outline-none focus:border-[#155DFC]"
+              value={hideAfterDays}
+              onChange={(e) => setHideAfterDays(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[12px] text-[#6A7282]">Delete posts after (days)</label>
+            <input
+              type="number"
+              min={1}
+              className="h-10 w-full rounded-[10px] border border-[#E5E7EB] px-3 text-[12px] outline-none focus:border-[#155DFC]"
+              value={deleteAfterDays}
+              onChange={(e) => setDeleteAfterDays(e.target.value)}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={saving}
+            className="h-10 w-full rounded-[10px] bg-[#155DFC] text-[12px] font-medium text-white disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save Policy'}
+          </button>
+        </form>
+      </div>
+    </section>
   );
 }
 
