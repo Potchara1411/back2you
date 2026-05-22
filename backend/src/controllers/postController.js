@@ -111,6 +111,14 @@ function validatePostInput(input, res) {
     res.status(400).json({ error: 'title is required' });
     return false;
   }
+  if (!input.category_id) {
+    res.status(400).json({ error: 'category is required' });
+    return false;
+  }
+  if (!input.date_occurred) {
+    res.status(400).json({ error: 'date is required' });
+    return false;
+  }
   return true;
 }
 
