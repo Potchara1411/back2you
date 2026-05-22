@@ -30,16 +30,7 @@ const postFilters = [
   { label: 'Claimed', params: { status: 'claimed' } },
   { label: 'Resolved', params: { status: 'resolved' } },
 ];
-const categories = [
-  'Electronics',
-  'Clothing',
-  'Books',
-  'Accessories',
-  'Keys',
-  'Wallet',
-  'ID Card',
-  'Other',
-];
+const DEFAULT_CATEGORIES = ['Electronics', 'Clothing', 'Books', 'Accessories', 'Keys', 'Wallet', 'ID Card', 'Other'];
 const buildingsByArea = {
   North: [
     'N1 IT Convergence Building',
@@ -314,6 +305,13 @@ export default function SearchPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+
+  useEffect(() => {
+    api.get('/posts/categories')
+      .then(({ data }) => setCategories(data.map(c => c.name)))
+      .catch(() => {});
+  }, []);
 
   const visiblePosts = useMemo(() => {
     if (sortBy === 'oldest') {

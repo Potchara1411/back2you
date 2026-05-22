@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarIcon, ChevronLeftIcon, LocationIcon, PlusIcon, TagIcon } from '../components/Icons';
 import MobileLayout from '../components/MobileLayout';
@@ -7,114 +7,36 @@ import api from '../services/api';
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const todayValue = new Date().toISOString().slice(0, 10);
-const categories = [
-  { id: 1, label: 'Electronics' },
-  { id: 2, label: 'Clothing' },
-  { id: 3, label: 'Books' },
-  { id: 4, label: 'Accessories' },
-  { id: 5, label: 'Keys' },
-  { id: 6, label: 'Wallet' },
-  { id: 7, label: 'ID Card' },
-  { id: 8, label: 'Other' },
+const DEFAULT_CATEGORIES = [
+  { id: 1, label: 'Electronics' }, { id: 2, label: 'Clothing' },
+  { id: 3, label: 'Books' }, { id: 4, label: 'Accessories' },
+  { id: 5, label: 'Keys' }, { id: 6, label: 'Wallet' },
+  { id: 7, label: 'ID Card' }, { id: 8, label: 'Other' },
 ];
 const buildingsByArea = {
   North: [
     'N1 IT Convergence Building',
-    'N2 Branch Administration B/D',
     'N3 Sports Complex',
-    'N4 School of Humanities & Social Science B/D',
-    'N5 Basic Experiement & Research B/D',
-    'N6 Faculty Hall',
-    'N7 Mechanical Engineering B/D',
-    'N7-1 Dept. of Nuclear & Quantum Engineering',
-    'N7-2 Dept. of Aerospace Engineering',
-    'N7-3, 4 Dept. of Mechanical Engineering',
-    'N7-5 Automobile Technology Laboratory Building',
-    'N9 Practice B/D',
     'N10 Undergraduate Branch Library',
     'N11 Cafeteria',
-    'N12 Student Center-2',
     'N13 Tae Wul Gwan',
-    'N13-1 Chang Young Shin Student Center',
-    'N14 Sarang Hall',
-    'N15 Staff Accommodation',
-    'N16 Somang Hall',
-    'N17 Seongsil Hall',
-    'N18 Jilli Hall',
-    'N19 Areum Hall',
-    'N20 Silloe Hall',
-    'N21 Jihye Hall',
-    'N22 Alumni Venture Hall',
-    'N23 fMRI Center',
-    'N24 LG Innovation Hall',
-    'N25 Dept. of Industrial Design B/D',
-    'N26 Center for High-Performance Integrated Systems',
     'N27 Eureka Hall',
-    'N28 Energy & Environment Research Center',
   ],
   East: [
     'E2 Industrial Engineering & Management B/D',
-    'E2-1 Dept. of Mathematical Sciences',
-    'E2-2 Dept. of Industrial & Systems Engineering',
-    'E2-3 Graduate School of Knowledge Service Engineering',
     'E3 Information & Electronics B/D',
     'E3-1 School of Computing',
-    'E3-2 School of Electrical Engineering',
-    'E3-3 Device Innovation Facility',
-    'E3-4 Saeneul Dong',
-    'E4 KAIST Institutes B/D',
     'E5 Faculty Club',
     'E6 Natural Science B/D',
-    'E6-1 Dept. of Mathematical Sciences',
-    'E6-2 Dept. of Physics',
-    'E6-3 Dept. of Biological Sciences',
-    'E6-4 Dept. of Chemistry',
-    'E6-5 GoongNi Laboratory Building',
-    'E6-6 Basic Science Building',
-    'E7 Biomedical Research Center',
-    'E8 Sejong Hall',
     'E9 Academic Cultural Complex',
-    'E10 Storehouse',
     'E11 Creative Learning B/D',
-    'E12 Energy Plant',
-    'E13 Satellite Technology Research Center',
-    'E14 Main Administration B/D',
-    'E15 Auditorium',
-    'E16 ChungMoonSoul B/D',
-    'E16-1 YANG Bun Soon B/D',
-    'E17 Stadium',
-    'E18 Daejeon Disease-model Animal Center',
-    'E18-1 Bio Model System Park',
-    'E19 National Nano Fab Center',
-    'E20 Kyeryong Hall',
-    'E21 KAIST Clinic, Pharmacy',
   ],
   West: [
     'W1 Applied Engineering B/D',
-    'W1-1 Dept. of Materials Science & Engineering',
-    'W1-2 Dept. of Civil & Environmental Engineering',
-    'W1-3 Dept. of Chemical & Biomolecular Engineering',
     'W2 Student Center-1',
-    'W2-1 International Center',
     'W3 Galilei Hall',
-    'W4-1 Yeoul Hall',
-    'W4-2 Nadl Hall',
-    'W4-3 Dasom Hall',
-    'W4-4 Heemang Hall',
-    'W5-1 Married Students Housing',
-    'W5-2 Startup Village',
-    'W5-3 International Village C',
-    'W5-4 International Village A',
-    'W5-5 International Village B',
-    'W6 Mir Hall, Narae Hall',
-    'W7 Nanum Hall',
     'W8 Educational Support B/D',
-    'W8-1 Analysis Center for Research Advancement',
     'W9 Outdoor Theater',
-    'W10 Wind Tunnel Laboratory',
-    'W11 International Faculty Apartment',
-    'W12 West Energy Plant',
-    'W16 Geotechnical Centrifuge Testing Center',
   ],
 };
 
@@ -126,33 +48,6 @@ const initialForm = {
   location: '',
   date_occurred: '',
 };
-
-function getFloorLabel(floor) {
-  if (floor === 1) return '1st floor';
-  if (floor === 2) return '2nd floor';
-  if (floor === 3) return '3rd floor';
-  return `${floor}th floor`;
-}
-
-function guessFloorCount(buildingName) {
-  if (/Outdoor|Stadium|Plant|Storehouse|Tunnel/i.test(buildingName)) return 1;
-  if (/Hall|Accommodation|Village|Apartment|Housing/i.test(buildingName)) return 10;
-  if (/Center|Complex|Library|Student Center|Clinic|Administration/i.test(buildingName)) return 5;
-  if (/Dept\.|School|Engineering|Science|Research|Institute|Building|B\/D/i.test(buildingName)) return 7;
-  return 4;
-}
-
-function getLocationDetails(buildingName) {
-  if (!buildingName) return [];
-  return [
-    'Near entrance',
-    ...Array.from({ length: guessFloorCount(buildingName) }, (_, index) => getFloorLabel(index + 1)),
-  ];
-}
-
-function findAreaForBuilding(buildingName) {
-  return Object.entries(buildingsByArea).find(([, buildingNames]) => buildingNames.includes(buildingName))?.[0] || '';
-}
 
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -175,9 +70,30 @@ function FieldShell({ icon: FieldIcon, label, children }) {
   );
 }
 
+function getFloorLabel(floor) {
+  if (floor === 1) return '1st floor';
+  if (floor === 2) return '2nd floor';
+  if (floor === 3) return '3rd floor';
+  return `${floor}th floor`;
+}
+
+function getLocationDetails(buildingName) {
+  if (!buildingName) return [];
+  const floorCount = /Hall|Library|Center|Complex/i.test(buildingName) ? 5 : 7;
+  return [
+    'Near entrance',
+    ...Array.from({ length: floorCount }, (_, index) => getFloorLabel(index + 1)),
+  ];
+}
+
+function findAreaForBuilding(buildingName) {
+  return Object.entries(buildingsByArea).find(([, buildingNames]) => buildingNames.includes(buildingName))?.[0] || '';
+}
+
 export default function CreatePostPage() {
   const [form, setForm] = useState(initialForm);
   const [images, setImages] = useState([]);
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [area, setArea] = useState('');
   const [building, setBuilding] = useState('');
   const [locationDetail, setLocationDetail] = useState('');
@@ -186,9 +102,15 @@ export default function CreatePostPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    api.get('/posts/categories')
+      .then(({ data }) => setCategories(data.map(c => ({ id: c.id, label: c.name }))))
+      .catch(() => {});
+  }, []);
+
   const selectedCategory = useMemo(
     () => categories.find((category) => String(category.id) === String(form.category_id)),
-    [form.category_id],
+    [categories, form.category_id],
   );
   const locationDetailOptions = useMemo(() => getLocationDetails(building), [building]);
 
@@ -227,7 +149,7 @@ export default function CreatePostPage() {
     const files = Array.from(event.target.files || []);
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
 
-    if (files.length > MAX_IMAGES) {
+    if (images.length + files.length > MAX_IMAGES) {
       setError('You can upload up to 3 images.');
       event.target.value = '';
       return;
@@ -240,7 +162,9 @@ export default function CreatePostPage() {
     }
 
     setError('');
-    setImages(await Promise.all(files.map(readFileAsDataUrl)));
+    const nextImages = await Promise.all(files.map(readFileAsDataUrl));
+    setImages((currentImages) => [...currentImages, ...nextImages].slice(0, MAX_IMAGES));
+    event.target.value = '';
   }
 
   async function submit(event) {
@@ -329,15 +253,6 @@ export default function CreatePostPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl bg-blue-50 p-4">
-            <p className="text-sm font-semibold text-blue-700">
-              {selectedCategory?.label || 'Item'} post
-            </p>
-            <p className="mt-1 text-sm leading-5 text-slate-600">
-              {images.length}/{MAX_IMAGES} photos selected. Total upload limit is 15MB.
-            </p>
-          </div>
-
           <FieldShell label="Title">
             <input
               className="h-[52px] w-full rounded-2xl border border-slate-200 bg-white px-4 text-base font-medium text-slate-950 outline-none focus:border-blue-500"
@@ -351,7 +266,6 @@ export default function CreatePostPage() {
           <FieldShell label="Category" icon={TagIcon}>
             <select
               className="h-[52px] w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-950 outline-none focus:border-blue-500"
-              required
               value={form.category_id}
               onChange={(event) => updateField('category_id', event.target.value)}
             >
@@ -418,7 +332,6 @@ export default function CreatePostPage() {
           <FieldShell label={form.type === 'lost' ? 'Lost date' : 'Found date'} icon={CalendarIcon}>
             <input
               className="h-[52px] w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-950 outline-none focus:border-blue-500"
-              required
               type="date"
               max={todayValue}
               value={form.date_occurred}
@@ -435,6 +348,15 @@ export default function CreatePostPage() {
             />
           </FieldShell>
 
+          <div className="rounded-2xl bg-blue-50 p-4">
+            <p className="text-sm font-semibold text-blue-700">
+              {selectedCategory?.label || 'Item'} post
+            </p>
+            <p className="mt-1 text-sm leading-5 text-slate-600">
+              {images.length}/{MAX_IMAGES} photos selected. Total upload limit is 15MB.
+            </p>
+          </div>
+
           {error && (
             <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
               {error}
@@ -442,7 +364,7 @@ export default function CreatePostPage() {
           )}
         </section>
 
-        <div className="mt-auto border-t border-slate-100 bg-white px-5 pb-6 pt-4">
+        <div className="sticky bottom-24 mt-auto border-t border-slate-100 bg-white px-5 py-4 sm:bottom-24">
           <button
             className="h-14 w-full rounded-2xl bg-blue-600 text-base font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isSubmitting}
