@@ -7,7 +7,7 @@ const OTP_EXPIRY_MINUTES = 10;
 const MOCK_OTP = '123456';
 
 function useMockAuth() {
-  return process.env.MOCK_AUTH === 'true' || process.env.USE_MOCK_DATA === 'true';
+  return process.env.MOCK_AUTH !== 'false' || process.env.USE_MOCK_DATA === 'true';
 }
 
 async function requestOtp(req, res) {

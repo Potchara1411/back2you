@@ -230,25 +230,23 @@ export default function CreatePostPage() {
     applyLocation(area, building, value);
   }
 
-  async function handleImages(event) {
-    const files = Array.from(event.target.files || []);
-    const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+  async function handleImages(event, index) {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-    if (images.length + files.length > MAX_IMAGES) {
-      setError('You can upload up to 3 images.');
-      event.target.value = '';
-      return;
-    }
-
-    if (totalBytes > MAX_IMAGE_BYTES) {
-      setError('Images must be 15MB or less in total.');
+    if (file.size > MAX_IMAGE_BYTES) {
+      setError('Each image must be 15MB or less.');
       event.target.value = '';
       return;
     }
 
     setError('');
-    const nextImages = await Promise.all(files.map(readFileAsDataUrl));
-    setImages((currentImages) => [...currentImages, ...nextImages].slice(0, MAX_IMAGES));
+    const dataUrl = await readFileAsDataUrl(file);
+    setImages((current) => {
+      const next = [...current];
+      next[index] = dataUrl;
+      return next;
+    });
     event.target.value = '';
   }
 
@@ -331,7 +329,7 @@ export default function CreatePostPage() {
                         <span className="text-xs font-medium">{index + 1}</span>
                       </div>
                     )}
-                    <input className="sr-only" type="file" accept="image/*" multiple onChange={handleImages} />
+                    <input className="sr-only" type="file" accept="image/*" onChange={(e) => handleImages(e, index)} />
                   </label>
                 );
               })}
