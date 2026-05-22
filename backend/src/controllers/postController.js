@@ -7,10 +7,10 @@ const MAX_LIMIT = 50;
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const STATUS_TRANSITIONS = {
-  open: new Set(['claimed']),
   hidden: new Set([]),
+  open: new Set([]),
   claimed: new Set(['pending_resolution']),
-  pending_resolution: new Set(['resolved']),
+  pending_resolution: new Set([]),
   resolved: new Set([]),
 };
 
@@ -102,6 +102,17 @@ function canModify(user, post) {
   return Number(user.id) === Number(post.user_id);
 }
 
+function canViewPending(user, post) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  if (canModify(user, post)) return true;
+  return Number(user.id) === Number(post.claimant_id);
+}
+
+function isFinalizedStatus(status) {
+  return ['claimed', 'pending_resolution', 'resolved', 'hidden'].includes(status);
+}
+
 function validatePostInput(input, res) {
   if (!['lost', 'found'].includes(input.type)) {
     res.status(400).json({ error: 'type must be lost or found' });
@@ -119,11 +130,29 @@ function validatePostInput(input, res) {
     res.status(400).json({ error: 'date is required' });
     return false;
   }
+  if (new Date(input.date_occurred) > new Date()) {
+    res.status(400).json({ error: 'date cannot be in the future' });
+    return false;
+  }
   return true;
 }
 
 function handleError(res, error) {
   return res.status(error.status || 500).json({ error: error.message || 'Post request failed' });
+}
+
+async function ensureClaimRequestsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS claim_requests (
+      id SERIAL PRIMARY KEY,
+      post_id INT REFERENCES posts(id) ON DELETE CASCADE,
+      claimant_id INT REFERENCES users(id) ON DELETE CASCADE,
+      details TEXT NOT NULL,
+      status VARCHAR(50) DEFAULT 'pending',
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
 }
 
 async function listPosts(req, res) {
@@ -228,16 +257,39 @@ async function createPost(req, res) {
 }
 
 async function getPostDetail(req, res) {
+  await ensureClaimRequestsTable();
   const { rows } = await pool.query(
-    `SELECT p.*, c.name AS category_name, u.name AS author_name
+    `SELECT
+       p.*,
+       c.name AS category_name,
+       u.name AS author_name,
+       latest_claim.claimant_id,
+       latest_claim.claimant_name,
+       latest_claim.claim_status,
+       latest_claim.claim_details
      FROM posts p
      LEFT JOIN categories c ON c.id = p.category_id
      LEFT JOIN users u ON u.id = p.user_id
+     LEFT JOIN LATERAL (
+       SELECT
+         cr.claimant_id,
+         cu.name AS claimant_name,
+         cr.status AS claim_status,
+         cr.details AS claim_details
+       FROM claim_requests cr
+       LEFT JOIN users cu ON cu.id = cr.claimant_id
+       WHERE cr.post_id = p.id
+       ORDER BY cr.created_at DESC
+       LIMIT 1
+     ) latest_claim ON TRUE
      WHERE p.id = $1`,
     [req.params.id],
   );
 
   if (!rows.length) return res.status(404).json({ error: 'Post not found' });
+  if (rows[0].status === 'pending_resolution' && !canViewPending(req.user, rows[0])) {
+    return res.status(404).json({ error: 'Post not found' });
+  }
   return res.json(rows[0]);
 }
 
@@ -246,6 +298,9 @@ async function editPost(req, res) {
     const post = await findPost(req.params.id);
     if (!post) return res.status(404).json({ error: 'Post not found' });
     if (!canModify(req.user, post)) return res.status(403).json({ error: 'Only the owner can edit this post' });
+    if (isFinalizedStatus(post.status)) {
+      return res.status(400).json({ error: 'This post can no longer be edited after it is claimed or resolved' });
+    }
 
     const input = parsePostBody(req.body);
     if (!validatePostInput(input, res)) return;
@@ -311,6 +366,55 @@ async function changePostStatus(req, res) {
   return res.json(rows[0]);
 }
 
+async function createClaimRequest(req, res) {
+  const client = await pool.connect();
+
+  try {
+    await ensureClaimRequestsTable();
+    const details = sanitizeText(req.body.details || '');
+    if (!details) {
+      return res.status(400).json({ error: 'Claim details are required' });
+    }
+
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT * FROM posts WHERE id = $1 FOR UPDATE', [req.params.id]);
+    const post = rows[0];
+
+    if (!post) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Post not found' });
+    }
+    if (canModify(req.user, post)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Owners cannot claim their own posts' });
+    }
+    if (post.status !== 'open') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'This post is not open for new claims' });
+    }
+
+    const claimResult = await client.query(
+      `INSERT INTO claim_requests (post_id, claimant_id, details, status)
+       VALUES ($1, $2, $3, 'pending')
+       RETURNING *`,
+      [req.params.id, req.user.id, details],
+    );
+
+    const postResult = await client.query(
+      `UPDATE posts SET status = 'claimed', updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [req.params.id],
+    );
+
+    await client.query('COMMIT');
+    return res.status(201).json({ claim: claimResult.rows[0], post: postResult.rows[0] });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    return handleError(res, error);
+  } finally {
+    client.release();
+  }
+}
+
 async function findPost(id) {
   const { rows } = await pool.query('SELECT * FROM posts WHERE id = $1', [id]);
   return rows[0];
@@ -323,4 +427,5 @@ module.exports = {
   editPost,
   deletePost,
   changePostStatus,
+  createClaimRequest,
 };

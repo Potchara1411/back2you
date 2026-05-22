@@ -20,6 +20,10 @@ function getPostFilter(filter, params) {
       return "p.status = 'hidden'";
     case 'resolved':
       return "p.status = 'resolved'";
+    case 'pending_resolution':
+      return "p.status = 'pending_resolution'";
+    case 'claimed':
+      return "p.status = 'claimed'";
     default:
       if (filter && filter !== 'all') {
         params.push(filter);
@@ -29,7 +33,22 @@ function getPostFilter(filter, params) {
   }
 }
 
+async function ensureClaimRequestsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS claim_requests (
+      id SERIAL PRIMARY KEY,
+      post_id INT REFERENCES posts(id) ON DELETE CASCADE,
+      claimant_id INT REFERENCES users(id) ON DELETE CASCADE,
+      details TEXT NOT NULL,
+      status VARCHAR(50) DEFAULT 'pending',
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+}
+
 async function listAllPosts(req, res) {
+  await ensureClaimRequestsTable();
   const params = [];
   const { limit, offset } = getPaging(req.query);
   const filter = getPostFilter(req.query.filter, params);
@@ -60,11 +79,31 @@ async function listAllPosts(req, res) {
           u.email AS owner_email,
           u.name AS owner_name,
           c.name AS category_name,
+          latest_claim.id AS claim_id,
+          latest_claim.claimant_id,
+          latest_claim.claimant_name,
+          latest_claim.claimant_email,
+          latest_claim.claim_status,
+          latest_claim.claim_details,
           COALESCE(report_totals.report_count, 0)::int AS report_count,
           (p.expires_at IS NOT NULL AND p.expires_at < NOW()) AS is_expired
         FROM posts p
         LEFT JOIN users u ON u.id = p.user_id
         LEFT JOIN categories c ON c.id = p.category_id
+        LEFT JOIN LATERAL (
+          SELECT
+            cr.id,
+            cr.claimant_id,
+            cu.name AS claimant_name,
+            cu.email AS claimant_email,
+            cr.status AS claim_status,
+            cr.details AS claim_details
+          FROM claim_requests cr
+          LEFT JOIN users cu ON cu.id = cr.claimant_id
+          WHERE cr.post_id = p.id
+          ORDER BY cr.created_at DESC
+          LIMIT 1
+        ) latest_claim ON TRUE
         LEFT JOIN (
           SELECT post_id, COUNT(*) AS report_count
           FROM reports
@@ -81,6 +120,45 @@ async function listAllPosts(req, res) {
   } catch (error) {
     console.error('Failed to list admin posts:', error);
     res.status(500).json({ error: 'Failed to load admin posts.' });
+  }
+}
+
+async function listClaims(req, res) {
+  await ensureClaimRequestsTable();
+  const { limit, offset } = getPaging(req.query);
+
+  try {
+    const { rows } = await pool.query(
+      `
+        SELECT
+          cr.id,
+          cr.post_id,
+          cr.claimant_id,
+          cr.details,
+          cr.status,
+          cr.created_at,
+          cr.updated_at,
+          p.title AS post_title,
+          p.type AS post_type,
+          p.status AS post_status,
+          owner.email AS owner_email,
+          owner.name AS owner_name,
+          claimant.email AS claimant_email,
+          claimant.name AS claimant_name
+        FROM claim_requests cr
+        JOIN posts p ON p.id = cr.post_id
+        LEFT JOIN users owner ON owner.id = p.user_id
+        LEFT JOIN users claimant ON claimant.id = cr.claimant_id
+        ORDER BY cr.created_at DESC
+        LIMIT $1 OFFSET $2
+      `,
+      [limit, offset],
+    );
+
+    return res.json({ claims: rows, limit, offset });
+  } catch (error) {
+    console.error('Failed to list claims:', error);
+    return res.status(500).json({ error: 'Failed to load claims.' });
   }
 }
 
@@ -112,6 +190,73 @@ async function sendPostHiddenNotice(post) {
   });
 
   return true;
+}
+
+async function resolvePostByAdmin(req, res) {
+  try {
+    const { rows } = await pool.query(
+      `
+        UPDATE posts
+        SET status = 'resolved',
+            updated_at = NOW()
+        WHERE id = $1
+          AND status = 'pending_resolution'
+        RETURNING *
+      `,
+      [req.params.id],
+    );
+
+    if (!rows.length) {
+      return res.status(400).json({ error: 'Only pending resolution posts can be resolved by admin.' });
+    }
+
+    return res.json({ post: rows[0] });
+  } catch (error) {
+    console.error('Failed to resolve admin post:', error);
+    return res.status(500).json({ error: 'Failed to resolve post.' });
+  }
+}
+
+async function updateClaimStatus(req, res) {
+  await ensureClaimRequestsTable();
+  const nextStatus = req.params.status;
+  if (!['approved', 'rejected'].includes(nextStatus)) {
+    return res.status(400).json({ error: 'Claim status must be approved or rejected.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `UPDATE claim_requests
+       SET status = $2,
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [req.params.id, nextStatus],
+    );
+
+    if (!rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Claim not found.' });
+    }
+
+    if (nextStatus === 'approved') {
+      await client.query(
+        `UPDATE posts SET status = 'claimed', updated_at = NOW() WHERE id = $1`,
+        [rows[0].post_id],
+      );
+    }
+
+    await client.query('COMMIT');
+    return res.json({ claim: rows[0] });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Failed to update claim:', error);
+    return res.status(500).json({ error: 'Failed to update claim.' });
+  } finally {
+    client.release();
+  }
 }
 
 async function deletePostByAdmin(req, res) {
@@ -276,8 +421,11 @@ function unblockUser(req, res) {
 
 module.exports = {
   listAllPosts,
+  listClaims,
   deletePostByAdmin,
   hidePostByAdmin,
+  resolvePostByAdmin,
+  updateClaimStatus,
   listUsers,
   blockUser,
   unblockUser,

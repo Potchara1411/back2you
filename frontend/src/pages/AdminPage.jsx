@@ -94,6 +94,8 @@ const filters = [
   { id: 'reported', label: 'Reported' },
   { id: 'expired', label: 'Expired' },
   { id: 'hidden', label: 'Hidden' },
+  { id: 'claimed', label: 'Claimed' },
+  { id: 'pending_resolution', label: 'Pending' },
   { id: 'resolved', label: 'Resolved' },
 ];
 
@@ -128,6 +130,8 @@ function matchesFilter(post, filter) {
   if (filter === 'reported') return Number(post.report_count) > 0;
   if (filter === 'expired') return Boolean(post.is_expired);
   if (filter === 'hidden') return post.status === 'hidden';
+  if (filter === 'claimed') return post.status === 'claimed';
+  if (filter === 'pending_resolution') return post.status === 'pending_resolution';
   if (filter === 'resolved') return post.status === 'resolved';
   return true;
 }
@@ -206,6 +210,29 @@ export default function AdminPage() {
       setNotice('Post hidden.');
     } catch (error) {
       setNotice(error.response?.data?.error || 'Failed to hide post.');
+    }
+  }
+
+  async function resolvePost(post) {
+    const confirmed = window.confirm('Mark this pending post as resolved?');
+    if (!confirmed) return;
+
+    if (isPreview) {
+      setPosts((currentPosts) =>
+        currentPosts.map((item) => (item.id === post.id ? { ...item, status: 'resolved' } : item)),
+      );
+      setNotice('Preview post resolved locally.');
+      return;
+    }
+
+    try {
+      const { data } = await api.patch(`/admin/posts/${post.id}/resolve`);
+      setPosts((currentPosts) =>
+        currentPosts.map((item) => (item.id === post.id ? { ...item, ...data.post } : item)),
+      );
+      setNotice('Post resolved.');
+    } catch (error) {
+      setNotice(error.response?.data?.error || 'Failed to resolve post.');
     }
   }
 
@@ -295,6 +322,7 @@ export default function AdminPage() {
                   loading={loading}
                   onFilterChange={setActiveFilter}
                   onHide={hidePost}
+                  onResolve={resolvePost}
                   onDelete={deletePost}
                 />
               )}
@@ -446,7 +474,7 @@ function UserCard({ user, tone, onShowActivity, onToggleBlock }) {
   );
 }
 
-function PostsPanel({ posts, activeFilter, loading, onFilterChange, onHide, onDelete }) {
+function PostsPanel({ posts, activeFilter, loading, onFilterChange, onHide, onResolve, onDelete }) {
   if (loading) {
     return <EmptyState label="Loading posts..." />;
   }
@@ -470,7 +498,7 @@ function PostsPanel({ posts, activeFilter, loading, onFilterChange, onHide, onDe
 
       {posts.length ? (
         posts.map((post) => (
-          <PostCard key={post.id} post={post} onHide={onHide} onDelete={onDelete} />
+          <PostCard key={post.id} post={post} onHide={onHide} onResolve={onResolve} onDelete={onDelete} />
         ))
       ) : (
         <EmptyState label="No posts found." />
@@ -479,7 +507,7 @@ function PostsPanel({ posts, activeFilter, loading, onFilterChange, onHide, onDe
   );
 }
 
-function PostCard({ post, onHide, onDelete }) {
+function PostCard({ post, onHide, onResolve, onDelete }) {
   return (
     <article className="rounded-[14px] border border-[#E5E7EB] bg-white p-[17px] shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -502,7 +530,16 @@ function PostCard({ post, onHide, onDelete }) {
         <p className="text-right">{post.report_count || 0} reports</p>
       </div>
 
-      <div className="mt-3 grid h-12 grid-cols-2 gap-2">
+      {post.claim_details && (
+        <div className="mt-3 rounded-[10px] bg-[#F8FAFC] px-3 py-2 text-[12px] leading-4 text-[#364153]">
+          <p className="font-medium text-[#101828]">
+            Claim by {post.claimant_name || post.claimant_email || `User #${post.claimant_id}`}
+          </p>
+          <p className="mt-1 line-clamp-2">{post.claim_details}</p>
+        </div>
+      )}
+
+      <div className="mt-3 grid min-h-12 grid-cols-2 gap-2">
         <button
           type="button"
           onClick={() => onHide(post)}
@@ -512,6 +549,16 @@ function PostCard({ post, onHide, onDelete }) {
           <IconEyeOff />
           <span>Hide</span>
         </button>
+        {post.status === 'pending_resolution' ? (
+          <button
+            type="button"
+            onClick={() => onResolve(post)}
+            className="flex items-center justify-center gap-2 rounded-[10px] bg-[#EFF6FF] px-3 text-[12px] font-medium text-[#1447E6]"
+          >
+            <IconClipboard />
+            <span>Resolve</span>
+          </button>
+        ) : (
         <button
           type="button"
           onClick={() => onDelete(post)}
@@ -520,6 +567,7 @@ function PostCard({ post, onHide, onDelete }) {
           <IconTrash />
           <span>Delete</span>
         </button>
+        )}
       </div>
     </article>
   );
