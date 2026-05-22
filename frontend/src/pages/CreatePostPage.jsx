@@ -8,11 +8,13 @@ const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const categories = [
   { id: 1, label: 'Electronics' },
-  { id: 2, label: 'Wallets & Cards' },
-  { id: 3, label: 'Umbrellas' },
-  { id: 4, label: 'Stationery & Books' },
-  { id: 5, label: 'Bags & Backpacks' },
-  { id: 6, label: 'Others' },
+  { id: 2, label: 'Clothing' },
+  { id: 3, label: 'Books' },
+  { id: 4, label: 'Accessories' },
+  { id: 5, label: 'Keys' },
+  { id: 6, label: 'Wallet' },
+  { id: 7, label: 'ID Card' },
+  { id: 8, label: 'Other' },
 ];
 
 const initialForm = {
