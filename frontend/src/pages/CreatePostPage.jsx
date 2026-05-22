@@ -6,6 +6,7 @@ import api from '../services/api';
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+const todayValue = new Date().toISOString().slice(0, 10);
 const categories = [
   { id: 1, label: 'Electronics' },
   { id: 2, label: 'Clothing' },
@@ -245,6 +246,12 @@ export default function CreatePostPage() {
   async function submit(event) {
     event.preventDefault();
     setError('');
+
+    if (form.date_occurred && form.date_occurred > todayValue) {
+      setError('You cannot choose a future date.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -315,9 +322,7 @@ export default function CreatePostPage() {
                         <span className="text-xs font-medium">{index + 1}</span>
                       </div>
                     )}
-                    {index === 0 && (
-                      <input className="sr-only" type="file" accept="image/*" multiple onChange={handleImages} />
-                    )}
+                    <input className="sr-only" type="file" accept="image/*" multiple onChange={handleImages} />
                   </label>
                 );
               })}
@@ -415,6 +420,7 @@ export default function CreatePostPage() {
               className="h-[52px] w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-950 outline-none focus:border-blue-500"
               required
               type="date"
+              max={todayValue}
               value={form.date_occurred}
               onChange={(event) => updateField('date_occurred', event.target.value)}
             />

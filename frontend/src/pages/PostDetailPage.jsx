@@ -8,11 +8,12 @@ import api from '../services/api';
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+const todayValue = new Date().toISOString().slice(0, 10);
 const nextStatuses = {
-  open: ['claimed'],
+  open: [],
   hidden: [],
   claimed: ['pending_resolution'],
-  pending_resolution: ['resolved'],
+  pending_resolution: [],
   resolved: [],
 };
 
@@ -131,7 +132,7 @@ function StatusStepper({ status }) {
   );
 }
 
-function EditForm({ form, error, onCancel, onChange, onImages, onSubmit }) {
+function EditForm({ form, error, onCancel, onChange, onImages, onRemoveImage, onSubmit }) {
   return (
     <MobileLayout showHeader={false}>
       <form className="min-h-full bg-white" onSubmit={onSubmit}>
@@ -187,17 +188,27 @@ function EditForm({ form, error, onCancel, onChange, onImages, onSubmit }) {
           <input
             className="h-[52px] w-full rounded-2xl border border-slate-200 px-4 text-base outline-none focus:border-blue-500"
             type="date"
+            max={todayValue}
             value={form.date_occurred}
             onChange={(event) => onChange('date_occurred', event.target.value)}
           />
           <label className="block rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center text-sm font-semibold text-blue-600">
-            Replace Photos
+            Add Photos
             <input className="sr-only" type="file" accept="image/*" multiple onChange={onImages} />
           </label>
           {form.images?.length > 0 && (
             <div className="grid grid-cols-3 gap-3">
-              {form.images.map((image) => (
-                <img key={image} className="aspect-square rounded-2xl object-cover" src={image} alt="Selected upload preview" />
+              {form.images.map((image, index) => (
+                <div key={image} className="relative">
+                  <img className="aspect-square rounded-2xl object-cover" src={image} alt="Selected upload preview" />
+                  <button
+                    className="absolute right-1 top-1 rounded-full bg-white/90 px-2 py-1 text-xs font-bold text-red-600 shadow"
+                    type="button"
+                    onClick={() => onRemoveImage(index)}
+                  >
+                    Remove
+                  </button>
+                </div>
               ))}
             </div>
           )}
@@ -271,6 +282,11 @@ export default function PostDetailPage() {
   const heroImage = useMemo(() => post?.images?.[activeImage] || post?.images?.[0], [activeImage, post]);
   const availableNextStatuses = nextStatuses[post?.status] || [];
   const isPostOwner = Boolean(user && post && Number(user.id) === Number(post.user_id));
+  const isAdmin = user?.role === 'admin';
+  const canEditPost = isPostOwner && post?.status === 'open';
+  const canSubmitClaim = Boolean(user && post && !isPostOwner && post.status === 'open');
+  const [claimDetails, setClaimDetails] = useState('');
+  const [claimSubmitting, setClaimSubmitting] = useState(false);
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -279,8 +295,9 @@ export default function PostDetailPage() {
   async function handleImages(event) {
     const files = Array.from(event.target.files || []);
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+    const existingImages = form.images || [];
 
-    if (files.length > MAX_IMAGES) {
+    if (existingImages.length + files.length > MAX_IMAGES) {
       setError('You can upload up to 3 images.');
       event.target.value = '';
       return;
@@ -293,14 +310,23 @@ export default function PostDetailPage() {
     }
 
     setError('');
-    updateField('images', await Promise.all(files.map(readFileAsDataUrl)));
+    updateField('images', [...existingImages, ...(await Promise.all(files.map(readFileAsDataUrl)))]);
+    event.target.value = '';
+  }
+
+  function removeImage(index) {
+    updateField('images', (form.images || []).filter((_, imageIndex) => imageIndex !== index));
   }
 
   async function saveEdit(event) {
     event.preventDefault();
-    if (!isPostOwner) {
-      setError('Only the owner can edit this post.');
+    if (!canEditPost) {
+      setError('Only open posts can be edited by the owner.');
       setEditMode(false);
+      return;
+    }
+    if (form.date_occurred && form.date_occurred > todayValue) {
+      setError('You cannot choose a future date.');
       return;
     }
     setError('');
@@ -348,6 +374,38 @@ export default function PostDetailPage() {
     }
   }
 
+  async function submitClaim(event) {
+    event.preventDefault();
+    if (!canSubmitClaim) return;
+    if (!claimDetails.trim()) {
+      setError('Add details so the owner can verify your claim.');
+      return;
+    }
+
+    setClaimSubmitting(true);
+    setError('');
+    try {
+      const { data } = await api.post(`/posts/${id}/claims`, { details: claimDetails.trim() });
+      setPost(normalizePost({ ...post, ...data.post }));
+      setClaimDetails('');
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || 'Failed to submit claim.');
+    } finally {
+      setClaimSubmitting(false);
+    }
+  }
+
+  async function resolveAsAdmin() {
+    if (!isAdmin || post.status !== 'pending_resolution') return;
+    setError('');
+    try {
+      const { data } = await api.patch(`/admin/posts/${id}/resolve`);
+      setPost(normalizePost(data.post));
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || 'Failed to resolve post.');
+    }
+  }
+
   if (error && !post) {
     return (
       <MobileLayout>
@@ -372,6 +430,7 @@ export default function PostDetailPage() {
         onCancel={() => setEditMode(false)}
         onChange={updateField}
         onImages={handleImages}
+        onRemoveImage={removeImage}
         onSubmit={saveEdit}
       />
     );
@@ -392,11 +451,13 @@ export default function PostDetailPage() {
             <IconButton label="Go back" onClick={() => navigate(-1)}>
               <ChevronLeftIcon className="h-5 w-5" />
             </IconButton>
-            {isPostOwner && (
+            {(canEditPost || isPostOwner) && (
               <div className="flex gap-2">
-                <IconButton label="Edit post" onClick={() => setEditMode(true)}>
-                  <EditIcon />
-                </IconButton>
+                {canEditPost && (
+                  <IconButton label="Edit post" onClick={() => setEditMode(true)}>
+                    <EditIcon />
+                  </IconButton>
+                )}
                 <IconButton label="Delete post" tone="bg-white/90 text-red-600" onClick={deletePost}>
                   <TrashIcon />
                 </IconButton>
@@ -448,6 +509,33 @@ export default function PostDetailPage() {
           </div>
 
           <StatusStepper status={post.status} />
+          <p className="text-sm leading-6 text-slate-500">
+            {post.type === 'lost' ? 'Lost' : 'Found'} is the post type. {statusCopy[post.status] || post.status} is the return status.
+          </p>
+
+          {canSubmitClaim && (
+            <form className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50 p-4" onSubmit={submitClaim}>
+              <div>
+                <h2 className="text-base font-bold text-slate-950">Submit a claim request</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  Lost/Found is the post type. Open/Claimed/Pending Resolution/Resolved is the return journey.
+                </p>
+              </div>
+              <textarea
+                className="min-h-24 w-full resize-none rounded-2xl border border-blue-100 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
+                placeholder="Describe where you found it, identifying details, or how the owner can verify it."
+                value={claimDetails}
+                onChange={(event) => setClaimDetails(event.target.value)}
+              />
+              <button
+                className="h-12 w-full rounded-2xl bg-blue-600 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={claimSubmitting}
+                type="submit"
+              >
+                {claimSubmitting ? 'Submitting...' : 'Submit Claim Request'}
+              </button>
+            </form>
+          )}
 
           {isPostOwner && availableNextStatuses.length > 0 && (
             <div className="space-y-3">
@@ -462,6 +550,16 @@ export default function PostDetailPage() {
                 </button>
               ))}
             </div>
+          )}
+
+          {isAdmin && post.status === 'pending_resolution' && (
+            <button
+              className="h-14 w-full rounded-2xl bg-blue-600 text-base font-bold text-white shadow-sm"
+              type="button"
+              onClick={resolveAsAdmin}
+            >
+              Resolve as Admin
+            </button>
           )}
 
           {post.status === 'resolved' && (
