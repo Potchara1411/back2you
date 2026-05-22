@@ -2,6 +2,16 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
 const postController = require('../controllers/postController');
+const pool = require('../models/db');
+
+router.get('/categories', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT id, name FROM categories ORDER BY id');
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch categories' });
+  }
+});
 
 router.get('/', postController.listPosts);
 router.post('/', authMiddleware, postController.createPost);
