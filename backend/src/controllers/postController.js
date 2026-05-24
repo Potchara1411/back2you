@@ -1,5 +1,6 @@
 const pool = require('../models/db');
 const mockPosts = require('../data/mockPosts');
+const mailer = require('../utils/mailer');
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 12;
@@ -59,6 +60,29 @@ function sanitizeText(value) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
     .trim();
+}
+
+async function sendClaimReviewNotice({ claim, post, status }) {
+  if (!claim?.claimant_email || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    return false;
+  }
+
+  const accepted = status === 'accepted';
+  const subject = accepted
+    ? '[Back2You@KAIST] Your claim was accepted'
+    : '[Back2You@KAIST] Your claim was rejected';
+  const text = accepted
+    ? `Your claim for "${post.title}" was accepted. Please coordinate with the post owner to complete the return.`
+    : `Your claim for "${post.title}" was rejected. You can review the item details or submit a new claim if you have clearer proof.`;
+
+  await mailer.sendMail({
+    from: process.env.EMAIL_USER,
+    to: claim.claimant_email,
+    subject,
+    text,
+  });
+
+  return true;
 }
 
 function normalizeImages(images) {
@@ -633,7 +657,10 @@ async function updateClaimRequest(req, res) {
        SET status = $1,
            updated_at = NOW()
        WHERE id = $2
-       RETURNING *`,
+       RETURNING *,
+         (SELECT email
+          FROM users
+          WHERE id = COALESCE(claim_requests.claimant_user_id, claim_requests.claimant_id)) AS claimant_email`,
       [nextStatus, req.params.claimId],
     );
 
@@ -661,7 +688,19 @@ async function updateClaimRequest(req, res) {
     }
 
     await client.query('COMMIT');
-    return res.json({ claim: updatedClaim.rows[0], post: updatedPost });
+
+    let noticeSent = false;
+    try {
+      noticeSent = await sendClaimReviewNotice({
+        claim: updatedClaim.rows[0],
+        post: updatedPost,
+        status: nextStatus,
+      });
+    } catch (noticeError) {
+      console.error('Failed to send claim review notice:', noticeError);
+    }
+
+    return res.json({ claim: updatedClaim.rows[0], post: updatedPost, noticeSent });
   } catch (error) {
     await client.query('ROLLBACK');
     return handleError(res, error);
