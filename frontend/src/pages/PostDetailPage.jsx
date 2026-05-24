@@ -493,7 +493,7 @@ export default function PostDetailPage() {
   }
 
   return (
-    <MobileLayout showHeader={false}>
+    <MobileLayout showHeader={false} showNav={!isAdmin}>
       <article className="min-h-full bg-white">
         <section className="relative h-[360px] overflow-hidden bg-slate-100">
           {heroImage ? (
