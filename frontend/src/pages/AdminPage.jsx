@@ -1259,38 +1259,45 @@ function ResolutionCard({ post, onResolve, onReject }) {
 
 function PostSummary({ post }) {
   const image = firstImage(post);
+  const navigate = useNavigate();
 
   return (
     <>
-      <div className="flex items-start gap-3">
-        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-[12px] bg-[#F3F4F6]">
-          {image ? (
-            <img src={image} alt={post.title || 'Item'} className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-[#99A1AF]">
-              <IconImage />
-            </div>
-          )}
+      <button
+        type="button"
+        onClick={() => navigate(`/posts/${post.id}`)}
+        className="w-full text-left"
+      >
+        <div className="flex items-start gap-3">
+          <div className="h-16 w-16 shrink-0 overflow-hidden rounded-[12px] bg-[#F3F4F6]">
+            {image ? (
+              <img src={image} alt={post.title || 'Item'} className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-[#99A1AF]">
+                <IconImage />
+              </div>
+            )}
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <p className="text-[12px] font-medium uppercase leading-4 text-[#6A7282]">{post.type}</p>
+            <h3 className="mt-1 break-words text-[14px] font-medium leading-5 text-[#101828]">{post.title}</h3>
+            <p className="mt-1 line-clamp-2 text-[12px] leading-4 text-[#6A7282]">
+              {post.description || 'No description.'}
+            </p>
+          </div>
+          <span className={`shrink-0 rounded px-2 py-0.5 text-[12px] leading-4 ${statusClasses[post.status] || 'bg-gray-100 text-gray-700'}`}>
+            {post.status}
+          </span>
         </div>
 
-        <div className="min-w-0 flex-1">
-          <p className="text-[12px] font-medium uppercase leading-4 text-[#6A7282]">{post.type}</p>
-          <h3 className="mt-1 break-words text-[14px] font-medium leading-5 text-[#101828]">{post.title}</h3>
-          <p className="mt-1 line-clamp-2 text-[12px] leading-4 text-[#6A7282]">
-            {post.description || 'No description.'}
-          </p>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-[12px] leading-4 text-[#6A7282]">
+          <p className="truncate">{post.location || 'No location'}</p>
+          <p className="truncate text-right">{post.category_name || post.category || 'Uncategorized'}</p>
+          <p>{formatDate(post.created_at)}</p>
+          <p className="text-right">{post.report_count || 0} reports</p>
         </div>
-        <span className={`shrink-0 rounded px-2 py-0.5 text-[12px] leading-4 ${statusClasses[post.status] || 'bg-gray-100 text-gray-700'}`}>
-          {post.status}
-        </span>
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-2 text-[12px] leading-4 text-[#6A7282]">
-        <p className="truncate">{post.location || 'No location'}</p>
-        <p className="truncate text-right">{post.category_name || post.category || 'Uncategorized'}</p>
-        <p>{formatDate(post.created_at)}</p>
-        <p className="text-right">{post.report_count || 0} reports</p>
-      </div>
+      </button>
     </>
   );
 }
