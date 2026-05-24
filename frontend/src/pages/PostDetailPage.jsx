@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CalendarIcon, ChevronLeftIcon, LocationIcon, TagIcon } from '../components/Icons';
 import MobileLayout from '../components/MobileLayout';
@@ -8,7 +8,9 @@ import api from '../services/api';
 
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const todayValue = new Date().toISOString().slice(0, 10);
-const nowDateTimeValue = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+function getNowDateTimeValue() {
+  return new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
 const nextStatuses = {
   open: [],
   hidden: [],
@@ -243,6 +245,7 @@ export default function PostDetailPage() {
     proof_images: [],
   });
   const [claimSubmitting, setClaimSubmitting] = useState(false);
+  const claimProofInputRef = useRef(null);
 
   useEffect(() => {
     let isActive = true;
@@ -404,7 +407,7 @@ export default function PostDetailPage() {
       setError('Add found location, found date/time, and a message.');
       return;
     }
-    if (claimForm.found_date > nowDateTimeValue) {
+    if (claimForm.found_date > getNowDateTimeValue()) {
       setError('Found date cannot be in the future.');
       return;
     }
@@ -494,6 +497,15 @@ export default function PostDetailPage() {
 
   return (
     <MobileLayout showHeader={false} showNav={!isAdmin}>
+      {/* Fixed-position so refocusing after the OS photo picker never causes a scroll jump */}
+      <input
+        ref={claimProofInputRef}
+        type="file"
+        accept="image/*"
+        tabIndex={-1}
+        style={{ position: 'fixed', opacity: 0, pointerEvents: 'none', width: 0, height: 0, top: 0, left: 0 }}
+        onChange={handleClaimProofImage}
+      />
       <article className="min-h-full bg-white">
         <section className="relative h-[360px] overflow-hidden bg-slate-100">
           {heroImage ? (
@@ -561,7 +573,7 @@ export default function PostDetailPage() {
           <div className="grid gap-3">
             <DetailRow icon={LocationIcon} label="Location" value={post.location || 'Not specified'} />
             <DetailRow icon={CalendarIcon} label={post.type === 'found' ? 'Found date' : 'Lost date'} value={formatDate(post.date_occurred)} />
-            <DetailRow icon={TagIcon} label={post.type === 'found' ? 'Finder' : 'Owner'} value={post.author_name || `User #${post.user_id}`} />
+            <DetailRow icon={TagIcon} label="Posted by" value={post.author_name || `User #${post.user_id}`} />
           </div>
 
           <StatusStepper status={post.status} />
@@ -590,7 +602,7 @@ export default function PostDetailPage() {
                 className="h-12 w-full rounded-2xl border border-blue-100 bg-white px-4 text-sm outline-none focus:border-blue-500"
                 required
                 type="datetime-local"
-                max={nowDateTimeValue}
+                max={getNowDateTimeValue()}
                 value={claimForm.found_date}
                 onChange={(event) => updateClaimField('found_date', event.target.value)}
               />
@@ -601,10 +613,13 @@ export default function PostDetailPage() {
                 value={claimForm.message}
                 onChange={(event) => updateClaimField('message', event.target.value)}
               />
-              <label className="block rounded-2xl border border-dashed border-blue-200 bg-white px-4 py-4 text-center text-sm font-bold text-blue-600">
+              <button
+                type="button"
+                className="block w-full rounded-2xl border border-dashed border-blue-200 bg-white px-4 py-4 text-center text-sm font-bold text-blue-600"
+                onClick={() => claimProofInputRef.current?.click()}
+              >
                 {claimForm.proof_images.length ? 'Replace proof image' : 'Add optional proof image'}
-                <input className="sr-only" type="file" accept="image/*" onChange={handleClaimProofImage} />
-              </label>
+              </button>
               {claimForm.proof_images[0] && (
                 <img className="h-24 w-24 rounded-2xl object-cover" src={claimForm.proof_images[0]} alt="Proof preview" />
               )}
