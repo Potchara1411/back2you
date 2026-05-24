@@ -61,6 +61,16 @@ const previewPosts = [
     owner_email: 'sora@kaist.ac.kr',
     report_count: 0,
     is_expired: false,
+    accepted_claim: {
+      claimant_name: 'Yilei Yan',
+      claimant_email: 'yilei@kaist.ac.kr',
+      message: 'I can identify the case scratches and have the matching serial photo.',
+      found_location: 'N10 lobby',
+      found_date: '2026-05-17T12:30:00Z',
+      proof_images: [],
+      status: 'accepted',
+    },
+    claim_requests: [],
     created_at: '2026-05-08T12:30:00Z',
     updated_at: '2026-05-17T12:30:00Z',
   },
@@ -1246,6 +1256,7 @@ function ResolutionCard({ post, onResolve, onReject }) {
   return (
     <article className="rounded-[14px] border border-[#FDE68A] bg-white p-[17px] shadow-sm">
       <PostSummary post={post} />
+      <ClaimReviewDetails post={post} />
       <div className="mt-3 rounded-[10px] bg-[#FFFBEB] px-3 py-2 text-[12px] leading-4 text-[#92400E]">
         Review owner, date, and uploaded images before finalizing resolution.
       </div>
@@ -1254,6 +1265,70 @@ function ResolutionCard({ post, onResolve, onReject }) {
         <SmallActionButton onClick={() => onReject(post)} label="Reject" icon={<IconBlock />} tone="red" />
       </div>
     </article>
+  );
+}
+
+function ClaimReviewDetails({ post }) {
+  const claims = Array.isArray(post.claim_requests) ? post.claim_requests : [];
+  const claim = post.accepted_claim || claims.find((item) => item.status === 'accepted') || claims[0];
+  const proofImages = Array.isArray(claim?.proof_images) ? claim.proof_images.filter(Boolean) : [];
+
+  if (!claim) {
+    return (
+      <div className="mt-3 rounded-[10px] border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-3">
+        <p className="text-[12px] font-medium text-[#6A7282]">No claim request details found.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 rounded-[10px] border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6A7282]">Accepted claim</p>
+          <p className="mt-1 break-words text-[13px] font-semibold leading-5 text-[#101828]">
+            {claim.claimant_name || claim.claimant_email || `User #${claim.claimant_user_id}`}
+          </p>
+          {claim.claimant_email && (
+            <p className="break-words text-[12px] leading-4 text-[#6A7282]">{claim.claimant_email}</p>
+          )}
+        </div>
+        <span className="shrink-0 rounded bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-700">
+          {claim.status || 'accepted'}
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 text-[12px] leading-4 text-[#4A5565]">
+        <div>
+          <p className="font-semibold text-[#101828]">Found location</p>
+          <p className="mt-0.5 break-words">{claim.found_location || 'Not provided'}</p>
+        </div>
+        <div>
+          <p className="font-semibold text-[#101828]">Found date</p>
+          <p className="mt-0.5">{formatDate(claim.found_date)}</p>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <p className="text-[12px] font-semibold text-[#101828]">Reason / proof note</p>
+        <p className="mt-1 whitespace-pre-wrap break-words text-[12px] leading-4 text-[#4A5565]">
+          {claim.message || claim.details || 'No reason provided.'}
+        </p>
+      </div>
+
+      {proofImages.length > 0 && (
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          {proofImages.map((image, index) => (
+            <img
+              key={`${claim.id || 'claim'}-${index}`}
+              src={image}
+              alt="Claim proof"
+              className="h-16 w-16 shrink-0 rounded-[10px] border border-[#E5E7EB] object-cover"
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
