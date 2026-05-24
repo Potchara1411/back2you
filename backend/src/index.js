@@ -12,7 +12,12 @@ const userRoutes = require('./routes/users');
 const app = express();
 
 app.use((req, res, next) => {
-  const allowed = ['http://localhost:5173', 'http://localhost:5174'];
+  const allowed = [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5174',
+  ];
   if (allowed.includes(req.headers.origin)) {
     res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
   }

@@ -20,5 +20,7 @@ router.put('/:id', authMiddleware, postController.editPost);
 router.delete('/:id', authMiddleware, postController.deletePost);
 router.patch('/:id/status', authMiddleware, postController.changePostStatus);
 router.post('/:id/claims', authMiddleware, postController.createClaimRequest);
+router.get('/:id/claims', authMiddleware, postController.listClaimRequests);
+router.patch('/:id/claims/:claimId', authMiddleware, postController.updateClaimRequest);
 
 module.exports = router;
