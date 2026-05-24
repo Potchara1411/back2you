@@ -458,11 +458,59 @@ async function listPendingResolutions(req, res) {
           p.location,
           p.status,
           p.images,
+          p.date_occurred,
           p.created_at,
           p.updated_at,
           u.email AS owner_email,
           u.name AS owner_name,
-          c.name AS category_name
+          c.name AS category_name,
+          (
+            SELECT JSON_BUILD_OBJECT(
+              'id', cr.id,
+              'claimant_user_id', COALESCE(cr.claimant_user_id, cr.claimant_id),
+              'claimant_name', claimant.name,
+              'claimant_email', claimant.email,
+              'message', cr.message,
+              'details', COALESCE(cr.details, cr.message),
+              'found_location', cr.found_location,
+              'found_date', cr.found_date,
+              'proof_images', COALESCE(cr.proof_images, ARRAY[]::TEXT[]),
+              'status', cr.status,
+              'created_at', cr.created_at,
+              'updated_at', cr.updated_at
+            )
+            FROM claim_requests cr
+            LEFT JOIN users claimant ON claimant.id = COALESCE(cr.claimant_user_id, cr.claimant_id)
+            WHERE cr.post_id = p.id
+              AND cr.status = 'accepted'
+            ORDER BY cr.updated_at DESC
+            LIMIT 1
+          ) AS accepted_claim,
+          COALESCE(
+            (
+              SELECT JSON_AGG(
+                JSON_BUILD_OBJECT(
+                  'id', cr.id,
+                  'claimant_user_id', COALESCE(cr.claimant_user_id, cr.claimant_id),
+                  'claimant_name', claimant.name,
+                  'claimant_email', claimant.email,
+                  'message', cr.message,
+                  'details', COALESCE(cr.details, cr.message),
+                  'found_location', cr.found_location,
+                  'found_date', cr.found_date,
+                  'proof_images', COALESCE(cr.proof_images, ARRAY[]::TEXT[]),
+                  'status', cr.status,
+                  'created_at', cr.created_at,
+                  'updated_at', cr.updated_at
+                )
+                ORDER BY cr.created_at DESC
+              )
+              FROM claim_requests cr
+              LEFT JOIN users claimant ON claimant.id = COALESCE(cr.claimant_user_id, cr.claimant_id)
+              WHERE cr.post_id = p.id
+            ),
+            '[]'::json
+          ) AS claim_requests
         FROM posts p
         LEFT JOIN users u ON u.id = p.user_id
         LEFT JOIN categories c ON c.id = p.category_id
