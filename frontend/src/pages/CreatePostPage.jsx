@@ -7,7 +7,7 @@ import api from '../services/api';
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const todayValue = new Date().toISOString().slice(0, 10);
-const categories = [
+const DEFAULT_CATEGORIES = [
   { id: 1, label: 'Electronics' },
   { id: 2, label: 'Clothing' },
   { id: 3, label: 'Books' },
@@ -178,6 +178,7 @@ function FieldShell({ icon: FieldIcon, label, children }) {
 export default function CreatePostPage() {
   const [form, setForm] = useState(initialForm);
   const [images, setImages] = useState([]);
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [area, setArea] = useState('');
   const [building, setBuilding] = useState('');
   const [locationDetail, setLocationDetail] = useState('');
@@ -194,8 +195,9 @@ export default function CreatePostPage() {
 
   const selectedCategory = useMemo(
     () => categories.find((category) => String(category.id) === String(form.category_id)),
-    [form.category_id],
+    [categories, form.category_id],
   );
+  const selectedImages = useMemo(() => images.filter(Boolean), [images]);
   const locationDetailOptions = useMemo(() => getLocationDetails(building), [building]);
 
   function updateField(field, value) {
@@ -264,7 +266,7 @@ export default function CreatePostPage() {
       const { data } = await api.post('/posts', {
         ...form,
         category_id: form.category_id || null,
-        images,
+        images: selectedImages,
       });
       navigate(`/posts/${data.id}`);
     } catch (requestError) {
@@ -340,7 +342,7 @@ export default function CreatePostPage() {
               {selectedCategory?.label || 'Item'} post
             </p>
             <p className="mt-1 text-sm leading-5 text-slate-600">
-              {images.length}/{MAX_IMAGES} photos selected. Total upload limit is 15MB.
+              {selectedImages.length}/{MAX_IMAGES} photos selected. Total upload limit is 15MB.
             </p>
           </div>
 
@@ -448,7 +450,7 @@ export default function CreatePostPage() {
           )}
         </section>
 
-        <div className="mt-auto border-t border-slate-100 bg-white px-5 pb-6 pt-4">
+        <div className="sticky bottom-0 mt-auto border-t border-slate-100 bg-white px-5 pb-6 pt-4">
           <button
             className="h-14 w-full rounded-2xl bg-blue-600 text-base font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isSubmitting}
