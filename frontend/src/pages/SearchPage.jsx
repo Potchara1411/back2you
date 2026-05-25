@@ -28,6 +28,7 @@ const postFilters = [
   { label: 'Lost', params: { type: 'lost', status: 'open' } },
   { label: 'Found', params: { type: 'found', status: 'open' } },
   { label: 'Claimed', params: { status: 'claimed' } },
+  { label: 'Pending', params: { status: 'pending_resolution' } },
   { label: 'Resolved', params: { status: 'resolved' } },
 ];
 const DEFAULT_CATEGORIES = ['Electronics', 'Clothing', 'Books', 'Accessories', 'Keys', 'Wallet', 'ID Card', 'Other'];
@@ -240,7 +241,6 @@ function SearchResultCard({ post, viewMode }) {
   }
 
   const image = post.images?.[0];
-  const ownerLabel = post.type === 'found' ? 'Finder' : 'Owner';
   const statusLabel = getStatusLabel(post);
   const statusClass = getStatusClass(post);
 
@@ -250,7 +250,7 @@ function SearchResultCard({ post, viewMode }) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="truncate text-base font-bold text-slate-950">{post.title}</h2>
-            <p className="mt-1 truncate text-xs text-slate-500">{post.category} · {ownerLabel}</p>
+            <p className="mt-1 truncate text-xs text-slate-500">{post.category}</p>
             <p className="mt-1 truncate text-xs text-slate-500">{post.location}</p>
           </div>
           <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold capitalize ${statusClass}`}>
@@ -273,7 +273,7 @@ function SearchResultCard({ post, viewMode }) {
             {statusLabel}
           </span>
         </div>
-        <p className="truncate text-xs font-medium text-slate-500">{post.category} · {ownerLabel}</p>
+        <p className="truncate text-xs font-medium text-slate-500">{post.category}</p>
         <p className="mt-1 line-clamp-2 text-xs text-slate-500">{post.location}</p>
         <p className="mt-1 text-xs text-slate-400">
           {getDateLabel(post)} {formatResultDate(post.date_occurred || post.created_at)}
@@ -495,7 +495,7 @@ export default function SearchPage() {
           ))}
         </div>
 
-        <div className="mt-3 grid grid-cols-5 gap-1.5">
+        <div className="mt-3 grid grid-cols-6 gap-1.5">
           {postFilters.map((filter) => (
             <button
               key={filter.label}
