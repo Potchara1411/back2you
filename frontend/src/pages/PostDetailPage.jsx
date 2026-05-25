@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CalendarIcon, ChevronLeftIcon, LocationIcon, TagIcon } from '../components/Icons';
 import MobileLayout from '../components/MobileLayout';
@@ -6,13 +6,16 @@ import { useAuth } from '../context/AuthContext';
 import { getMockPost } from '../data/mockPosts';
 import api from '../services/api';
 
-const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+const todayValue = new Date().toISOString().slice(0, 10);
+function getNowDateTimeValue() {
+  return new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
 const nextStatuses = {
-  open: ['claimed'],
+  open: [],
   hidden: [],
   claimed: ['pending_resolution'],
-  pending_resolution: ['resolved'],
+  pending_resolution: [],
   resolved: [],
 };
 
@@ -56,6 +59,7 @@ function normalizePost(data) {
     category_name: data.category_name || data.category || 'Item',
     author_name: data.author_name || data.owner_name || (data.type === 'found' ? 'Finder' : 'Owner'),
     images: data.images || [],
+    claim_requests: data.claim_requests || [],
   };
 }
 
@@ -107,7 +111,7 @@ function DetailRow({ icon: RowIcon, label, value }) {
 
 function StatusStepper({ status }) {
   const steps = ['open', 'claimed', 'resolved'];
-  const displayStatus = status === 'pending_resolution' ? 'claimed' : status;
+  const displayStatus = status === 'pending_resolution' ? 'claimed' : status === 'hidden' ? 'open' : status;
   const activeIndex = Math.max(steps.indexOf(displayStatus), 0);
 
   return (
@@ -123,15 +127,15 @@ function StatusStepper({ status }) {
         ))}
       </div>
       <div className="mt-3 grid grid-cols-3 gap-1 text-[10px] font-semibold text-slate-500">
-        <span>Open</span>
-        <span>Claimed</span>
-        <span>Resolved</span>
+        <span className="text-left">Open</span>
+        <span className="text-center">Claimed</span>
+        <span className="text-right">Resolved</span>
       </div>
     </div>
   );
 }
 
-function EditForm({ form, error, onCancel, onChange, onImages, onSubmit }) {
+function EditForm({ form, error, onCancel, onChange, onImageReplace, onSubmit }) {
   return (
     <MobileLayout showHeader={false}>
       <form className="min-h-full bg-white" onSubmit={onSubmit}>
@@ -187,18 +191,29 @@ function EditForm({ form, error, onCancel, onChange, onImages, onSubmit }) {
           <input
             className="h-[52px] w-full rounded-2xl border border-slate-200 px-4 text-base outline-none focus:border-blue-500"
             type="date"
+            max={todayValue}
             value={form.date_occurred}
             onChange={(event) => onChange('date_occurred', event.target.value)}
           />
-          <label className="block rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center text-sm font-semibold text-blue-600">
-            Replace Photos
-            <input className="sr-only" type="file" accept="image/*" multiple onChange={onImages} />
-          </label>
           {form.images?.length > 0 && (
-            <div className="grid grid-cols-3 gap-3">
-              {form.images.map((image) => (
-                <img key={image} className="aspect-square rounded-2xl object-cover" src={image} alt="Selected upload preview" />
-              ))}
+            <div>
+              <p className="mb-2 text-sm font-semibold text-slate-700">Replace existing photos</p>
+              <div className="grid grid-cols-3 gap-3">
+                {form.images.map((image, index) => (
+                  <label key={`${image}-${index}`} className="relative block cursor-pointer">
+                  <img className="aspect-square rounded-2xl object-cover" src={image} alt="Selected upload preview" />
+                    <span className="absolute inset-x-2 bottom-2 rounded-xl bg-white/90 px-2 py-1 text-center text-xs font-bold text-blue-600 shadow">
+                      Replace
+                    </span>
+                    <input className="sr-only" type="file" accept="image/*" onChange={(event) => onImageReplace(event, index)} />
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          {!form.images?.length && (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-center text-sm font-medium text-slate-500">
+              This post has no photos to replace.
             </div>
           )}
           {error && <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600">{error}</p>}
@@ -223,6 +238,14 @@ export default function PostDetailPage() {
   const [form, setForm] = useState(null);
   const [error, setError] = useState('');
   const [activeImage, setActiveImage] = useState(0);
+  const [claimForm, setClaimForm] = useState({
+    message: '',
+    found_location: '',
+    found_date: '',
+    proof_images: [],
+  });
+  const [claimSubmitting, setClaimSubmitting] = useState(false);
+  const claimProofInputRef = useRef(null);
 
   useEffect(() => {
     let isActive = true;
@@ -271,36 +294,47 @@ export default function PostDetailPage() {
   const heroImage = useMemo(() => post?.images?.[activeImage] || post?.images?.[0], [activeImage, post]);
   const availableNextStatuses = nextStatuses[post?.status] || [];
   const isPostOwner = Boolean(user && post && Number(user.id) === Number(post.user_id));
+  const isAdmin = user?.role === 'admin';
+  const canEditPost = isPostOwner && post?.status === 'open';
+  const visibleClaims = post?.claim_requests || [];
+  const ownActiveClaim = visibleClaims.find((claim) => (
+    Number(claim.claimant_user_id) === Number(user?.id)
+    && ['pending', 'accepted'].includes(claim.status)
+  ));
+  const canSubmitClaim = Boolean(user && post && !isPostOwner && post.status === 'open' && !ownActiveClaim);
+  const canReviewClaims = Boolean(post && (isPostOwner || isAdmin));
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
-  async function handleImages(event) {
-    const files = Array.from(event.target.files || []);
-    const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+  async function replaceImage(event, index) {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-    if (files.length > MAX_IMAGES) {
-      setError('You can upload up to 3 images.');
-      event.target.value = '';
-      return;
-    }
-
-    if (totalBytes > MAX_IMAGE_BYTES) {
-      setError('Images must be 15MB or less in total.');
+    if (file.size > MAX_IMAGE_BYTES) {
+      setError('Each image must be 15MB or less.');
       event.target.value = '';
       return;
     }
 
     setError('');
-    updateField('images', await Promise.all(files.map(readFileAsDataUrl)));
+    const image = await readFileAsDataUrl(file);
+    const nextImages = [...(form.images || [])];
+    nextImages[index] = image;
+    updateField('images', nextImages);
+    event.target.value = '';
   }
 
   async function saveEdit(event) {
     event.preventDefault();
-    if (!isPostOwner) {
-      setError('Only the owner can edit this post.');
+    if (!canEditPost) {
+      setError('Only open posts can be edited by the owner.');
       setEditMode(false);
+      return;
+    }
+    if (form.date_occurred && form.date_occurred > todayValue) {
+      setError('You cannot choose a future date.');
       return;
     }
     setError('');
@@ -311,9 +345,8 @@ export default function PostDetailPage() {
       });
       setPost(normalizePost(data));
       setEditMode(false);
-    } catch {
-      setPost((current) => normalizePost({ ...current, ...form }));
-      setEditMode(false);
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || 'Failed to save post changes.');
     }
   }
 
@@ -342,9 +375,94 @@ export default function PostDetailPage() {
       const normalized = normalizePost(data);
       setPost(normalized);
       setForm((current) => ({ ...current, ...normalized }));
-    } catch {
-      setPost((current) => normalizePost({ ...current, status }));
-      setForm((current) => ({ ...current, status }));
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || 'Failed to update status.');
+    }
+  }
+
+  async function handleClaimProofImage(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > MAX_IMAGE_BYTES) {
+      setError('Proof image must be 15MB or less.');
+      event.target.value = '';
+      return;
+    }
+
+    setError('');
+    const image = await readFileAsDataUrl(file);
+    setClaimForm((current) => ({ ...current, proof_images: [image] }));
+    event.target.value = '';
+  }
+
+  function updateClaimField(field, value) {
+    setClaimForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submitClaim(event) {
+    event.preventDefault();
+    if (!canSubmitClaim) return;
+    if (!claimForm.found_location.trim() || !claimForm.found_date || !claimForm.message.trim()) {
+      setError('Add found location, found date/time, and a message.');
+      return;
+    }
+    if (claimForm.found_date > getNowDateTimeValue()) {
+      setError('Found date cannot be in the future.');
+      return;
+    }
+
+    setClaimSubmitting(true);
+    setError('');
+    try {
+      const { data } = await api.post(`/posts/${id}/claims`, {
+        message: claimForm.message.trim(),
+        found_location: claimForm.found_location.trim(),
+        found_date: claimForm.found_date,
+        proof_images: claimForm.proof_images,
+      });
+      setPost(normalizePost({
+        ...post,
+        ...data.post,
+        claim_requests: [data.claim, ...(post.claim_requests || [])],
+      }));
+      setClaimForm({ message: '', found_location: '', found_date: '', proof_images: [] });
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || 'Failed to submit claim.');
+    } finally {
+      setClaimSubmitting(false);
+    }
+  }
+
+  async function reviewClaim(claim, status) {
+    if (!canReviewClaims) return;
+    setError('');
+
+    try {
+      const { data } = await api.patch(`/posts/${id}/claims/${claim.id}`, { status });
+      setPost((current) => normalizePost({
+        ...current,
+        ...data.post,
+        claim_requests: (current.claim_requests || []).map((item) => {
+          if (item.id === claim.id) return { ...item, ...data.claim };
+          if (status === 'accepted' && item.status === 'pending') return { ...item, status: 'rejected' };
+          return item;
+        }),
+      }));
+      setForm((current) => ({ ...current, ...data.post }));
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || 'Failed to update claim request.');
+    }
+  }
+
+  async function resolveAsAdmin() {
+    if (!isAdmin || post.status !== 'pending_resolution') return;
+    setError('');
+    try {
+      const { data } = await api.patch(`/admin/posts/${id}/resolve`);
+      setPost((current) => normalizePost({ ...current, ...data.post }));
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || 'Failed to resolve post.');
     }
   }
 
@@ -371,14 +489,23 @@ export default function PostDetailPage() {
         error={error}
         onCancel={() => setEditMode(false)}
         onChange={updateField}
-        onImages={handleImages}
+        onImageReplace={replaceImage}
         onSubmit={saveEdit}
       />
     );
   }
 
   return (
-    <MobileLayout showHeader={false}>
+    <MobileLayout showHeader={false} showNav={!isAdmin}>
+      {/* Fixed-position so refocusing after the OS photo picker never causes a scroll jump */}
+      <input
+        ref={claimProofInputRef}
+        type="file"
+        accept="image/*"
+        tabIndex={-1}
+        style={{ position: 'fixed', opacity: 0, pointerEvents: 'none', width: 0, height: 0, top: 0, left: 0 }}
+        onChange={handleClaimProofImage}
+      />
       <article className="min-h-full bg-white">
         <section className="relative h-[360px] overflow-hidden bg-slate-100">
           {heroImage ? (
@@ -392,11 +519,13 @@ export default function PostDetailPage() {
             <IconButton label="Go back" onClick={() => navigate(-1)}>
               <ChevronLeftIcon className="h-5 w-5" />
             </IconButton>
-            {isPostOwner && (
+            {(canEditPost || isPostOwner) && (
               <div className="flex gap-2">
-                <IconButton label="Edit post" onClick={() => setEditMode(true)}>
-                  <EditIcon />
-                </IconButton>
+                {canEditPost && (
+                  <IconButton label="Edit post" onClick={() => setEditMode(true)}>
+                    <EditIcon />
+                  </IconButton>
+                )}
                 <IconButton label="Delete post" tone="bg-white/90 text-red-600" onClick={deletePost}>
                   <TrashIcon />
                 </IconButton>
@@ -444,10 +573,125 @@ export default function PostDetailPage() {
           <div className="grid gap-3">
             <DetailRow icon={LocationIcon} label="Location" value={post.location || 'Not specified'} />
             <DetailRow icon={CalendarIcon} label={post.type === 'found' ? 'Found date' : 'Lost date'} value={formatDate(post.date_occurred)} />
-            <DetailRow icon={TagIcon} label={post.type === 'found' ? 'Finder' : 'Owner'} value={post.author_name || `User #${post.user_id}`} />
+            <DetailRow icon={TagIcon} label="Posted by" value={post.author_name || `User #${post.user_id}`} />
           </div>
 
           <StatusStepper status={post.status} />
+          <p className="text-sm leading-6 text-slate-500">
+            {post.type === 'lost' ? 'Lost' : 'Found'} is the post type. {statusCopy[post.status] || post.status} is the return status.
+          </p>
+
+          {canSubmitClaim && (
+            <form className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50 p-4" onSubmit={submitClaim}>
+              <div>
+                <h2 className="text-base font-bold text-slate-950">
+                  {post.type === 'lost' ? 'I found this' : 'Claim this item'}
+                </h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  Lost/Found is the post type. Open/Claimed/Pending Resolution/Resolved is the return journey.
+                </p>
+              </div>
+              <input
+                className="h-12 w-full rounded-2xl border border-blue-100 bg-white px-4 text-sm outline-none focus:border-blue-500"
+                placeholder="Found location"
+                required
+                value={claimForm.found_location}
+                onChange={(event) => updateClaimField('found_location', event.target.value)}
+              />
+              <input
+                className="h-12 w-full rounded-2xl border border-blue-100 bg-white px-4 text-sm outline-none focus:border-blue-500"
+                required
+                type="datetime-local"
+                max={getNowDateTimeValue()}
+                value={claimForm.found_date}
+                onChange={(event) => updateClaimField('found_date', event.target.value)}
+              />
+              <textarea
+                className="min-h-24 w-full resize-none rounded-2xl border border-blue-100 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
+                placeholder="Message for the owner: identifying details, pickup plan, or proof."
+                required
+                value={claimForm.message}
+                onChange={(event) => updateClaimField('message', event.target.value)}
+              />
+              <button
+                type="button"
+                className="block w-full rounded-2xl border border-dashed border-blue-200 bg-white px-4 py-4 text-center text-sm font-bold text-blue-600"
+                onClick={() => claimProofInputRef.current?.click()}
+              >
+                {claimForm.proof_images.length ? 'Replace proof image' : 'Add optional proof image'}
+              </button>
+              {claimForm.proof_images[0] && (
+                <img className="h-24 w-24 rounded-2xl object-cover" src={claimForm.proof_images[0]} alt="Proof preview" />
+              )}
+              <button
+                className="h-12 w-full rounded-2xl bg-blue-600 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={claimSubmitting}
+                type="submit"
+              >
+                {claimSubmitting ? 'Submitting...' : 'Submit Claim Request'}
+              </button>
+            </form>
+          )}
+
+          {ownActiveClaim && !canSubmitClaim && !canReviewClaims && (
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-4 text-sm text-slate-700">
+              <p className="font-bold text-slate-950">Your claim request is {ownActiveClaim.status}.</p>
+              <p className="mt-1">{ownActiveClaim.message || ownActiveClaim.details}</p>
+            </div>
+          )}
+
+          {canReviewClaims && visibleClaims.length > 0 && (
+            <section className="space-y-3">
+              <h2 className="text-base font-bold text-slate-950">Claim requests</h2>
+              {visibleClaims.map((claim) => (
+                <div key={claim.id} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-950">
+                        {claim.claimant_name || claim.claimant_email || `User #${claim.claimant_user_id}`}
+                      </p>
+                      <p className="mt-1 text-xs font-semibold uppercase text-slate-400">{claim.status}</p>
+                    </div>
+                    <span className={`rounded-full px-3 py-1 text-xs font-bold ${
+                      claim.status === 'accepted'
+                        ? 'bg-green-100 text-green-700'
+                        : claim.status === 'rejected'
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {claim.status}
+                    </span>
+                  </div>
+                  <div className="mt-3 space-y-1 text-sm leading-6 text-slate-600">
+                    <p><span className="font-semibold text-slate-900">Found location:</span> {claim.found_location || 'Not provided'}</p>
+                    <p><span className="font-semibold text-slate-900">Found date:</span> {formatDate(claim.found_date)}</p>
+                    <p className="whitespace-pre-wrap">{claim.message || claim.details}</p>
+                  </div>
+                  {claim.proof_images?.[0] && (
+                    <img className="mt-3 h-24 w-24 rounded-2xl object-cover" src={claim.proof_images[0]} alt="Claim proof" />
+                  )}
+                  {claim.status === 'pending' && (
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      <button
+                        className="h-11 rounded-2xl bg-blue-600 text-sm font-bold text-white"
+                        type="button"
+                        onClick={() => reviewClaim(claim, 'accepted')}
+                      >
+                        Accept
+                      </button>
+                      <button
+                        className="h-11 rounded-2xl bg-red-50 text-sm font-bold text-red-600"
+                        type="button"
+                        onClick={() => reviewClaim(claim, 'rejected')}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </section>
+          )}
 
           {isPostOwner && availableNextStatuses.length > 0 && (
             <div className="space-y-3">
@@ -462,6 +706,16 @@ export default function PostDetailPage() {
                 </button>
               ))}
             </div>
+          )}
+
+          {isAdmin && post.status === 'pending_resolution' && (
+            <button
+              className="h-14 w-full rounded-2xl bg-blue-600 text-base font-bold text-white shadow-sm"
+              type="button"
+              onClick={resolveAsAdmin}
+            >
+              Resolve as Admin
+            </button>
           )}
 
           {post.status === 'resolved' && (

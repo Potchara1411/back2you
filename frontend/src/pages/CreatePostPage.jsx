@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarIcon, ChevronLeftIcon, LocationIcon, PlusIcon, TagIcon } from '../components/Icons';
 import MobileLayout from '../components/MobileLayout';
@@ -6,7 +6,8 @@ import api from '../services/api';
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
-const categories = [
+const todayValue = new Date().toISOString().slice(0, 10);
+const DEFAULT_CATEGORIES = [
   { id: 1, label: 'Electronics' },
   { id: 2, label: 'Clothing' },
   { id: 3, label: 'Books' },
@@ -177,6 +178,7 @@ function FieldShell({ icon: FieldIcon, label, children }) {
 export default function CreatePostPage() {
   const [form, setForm] = useState(initialForm);
   const [images, setImages] = useState([]);
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [area, setArea] = useState('');
   const [building, setBuilding] = useState('');
   const [locationDetail, setLocationDetail] = useState('');
@@ -185,10 +187,17 @@ export default function CreatePostPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    api.get('/posts/categories')
+      .then(({ data }) => setCategories(data.map(c => ({ id: c.id, label: c.name }))))
+      .catch(() => {});
+  }, []);
+
   const selectedCategory = useMemo(
     () => categories.find((category) => String(category.id) === String(form.category_id)),
-    [form.category_id],
+    [categories, form.category_id],
   );
+  const selectedImages = useMemo(() => images.filter(Boolean), [images]);
   const locationDetailOptions = useMemo(() => getLocationDetails(building), [building]);
 
   function updateField(field, value) {
@@ -222,36 +231,42 @@ export default function CreatePostPage() {
     applyLocation(area, building, value);
   }
 
-  async function handleImages(event) {
-    const files = Array.from(event.target.files || []);
-    const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+  async function handleImages(event, index) {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-    if (files.length > MAX_IMAGES) {
-      setError('You can upload up to 3 images.');
-      event.target.value = '';
-      return;
-    }
-
-    if (totalBytes > MAX_IMAGE_BYTES) {
-      setError('Images must be 15MB or less in total.');
+    if (file.size > MAX_IMAGE_BYTES) {
+      setError('Each image must be 15MB or less.');
       event.target.value = '';
       return;
     }
 
     setError('');
-    setImages(await Promise.all(files.map(readFileAsDataUrl)));
+    const dataUrl = await readFileAsDataUrl(file);
+    setImages((current) => {
+      const next = [...current];
+      next[index] = dataUrl;
+      return next;
+    });
+    event.target.value = '';
   }
 
   async function submit(event) {
     event.preventDefault();
     setError('');
+
+    if (form.date_occurred && form.date_occurred > todayValue) {
+      setError('You cannot choose a future date.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
       const { data } = await api.post('/posts', {
         ...form,
         category_id: form.category_id || null,
-        images,
+        images: selectedImages,
       });
       navigate(`/posts/${data.id}`);
     } catch (requestError) {
@@ -315,9 +330,7 @@ export default function CreatePostPage() {
                         <span className="text-xs font-medium">{index + 1}</span>
                       </div>
                     )}
-                    {index === 0 && (
-                      <input className="sr-only" type="file" accept="image/*" multiple onChange={handleImages} />
-                    )}
+                    <input className="sr-only" type="file" accept="image/*" onChange={(e) => handleImages(e, index)} />
                   </label>
                 );
               })}
@@ -329,7 +342,7 @@ export default function CreatePostPage() {
               {selectedCategory?.label || 'Item'} post
             </p>
             <p className="mt-1 text-sm leading-5 text-slate-600">
-              {images.length}/{MAX_IMAGES} photos selected. Total upload limit is 15MB.
+              {selectedImages.length}/{MAX_IMAGES} photos selected. Total upload limit is 15MB.
             </p>
           </div>
 
@@ -415,6 +428,7 @@ export default function CreatePostPage() {
               className="h-[52px] w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-950 outline-none focus:border-blue-500"
               required
               type="date"
+              max={todayValue}
               value={form.date_occurred}
               onChange={(event) => updateField('date_occurred', event.target.value)}
             />
@@ -436,7 +450,7 @@ export default function CreatePostPage() {
           )}
         </section>
 
-        <div className="mt-auto border-t border-slate-100 bg-white px-5 pb-6 pt-4">
+        <div className="sticky bottom-0 mt-auto border-t border-slate-100 bg-white px-5 pb-6 pt-4">
           <button
             className="h-14 w-full rounded-2xl bg-blue-600 text-base font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isSubmitting}
