@@ -262,7 +262,6 @@ async function listPosts(req, res) {
   if (!process.env.DATABASE_URL || process.env.USE_MOCK_DATA === 'true') {
     const visiblePosts = mockPosts
       .filter((post) => post.status !== 'hidden')
-      .filter((post) => post.status !== 'pending_resolution')
       .filter((post) => status || post.status !== 'resolved')
       .filter((post) => !type || post.type === type)
       .filter((post) => !status || post.status === status)
@@ -271,7 +270,7 @@ async function listPosts(req, res) {
     return res.json(paginatePosts(visiblePosts, page, limit));
   }
 
-  const conditions = ['p.is_archived = FALSE', "p.status <> 'hidden'", "p.status <> 'pending_resolution'"];
+  const conditions = ['p.is_archived = FALSE', "p.status <> 'hidden'"];
   const values = [];
 
   if (type) {
