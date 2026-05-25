@@ -35,7 +35,6 @@ function getPostId(post) {
 export default function PostCard({ post }) {
   const image = post.images?.[0];
   const statusClass = statusStyles[post.status] || statusStyles.open;
-  const ownerLabel = post.type === 'found' ? 'Finder' : 'Owner';
   const postId = getPostId(post);
 
   return (
@@ -55,9 +54,6 @@ export default function PostCard({ post }) {
         )}
         <span className={`absolute right-4 top-4 rounded-full px-5 py-2 text-sm font-semibold capitalize ${statusClass}`}>
           {formatStatus(post.status === 'open' ? post.type : post.status)}
-        </span>
-        <span className="absolute bottom-4 right-4 rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 shadow-sm">
-          {ownerLabel}
         </span>
       </div>
 

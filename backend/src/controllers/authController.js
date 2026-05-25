@@ -7,7 +7,7 @@ const OTP_EXPIRY_MINUTES = 10;
 const MOCK_OTP = '123456';
 
 function useMockAuth() {
-  return process.env.MOCK_AUTH === 'true' || process.env.USE_MOCK_DATA === 'true';
+  return process.env.MOCK_AUTH !== 'false' || process.env.USE_MOCK_DATA === 'true';
 }
 
 async function requestOtp(req, res) {
@@ -90,9 +90,11 @@ async function verifyOtp(req, res) {
       return res.status(401).json({ error: 'OTP has expired' });
     }
 
+    const defaultName = user.name || email.split('@')[0];
+
     await pool.query(
-      'UPDATE users SET otp_code = NULL, otp_expires_at = NULL WHERE id = $1',
-      [user.id]
+      'UPDATE users SET otp_code = NULL, otp_expires_at = NULL, name = COALESCE(name, $2) WHERE id = $1',
+      [user.id, defaultName]
     );
 
     const token = jwt.sign(
@@ -103,7 +105,7 @@ async function verifyOtp(req, res) {
 
     res.json({
       token,
-      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      user: { id: user.id, email: user.email, name: defaultName, role: user.role },
     });
   } catch (err) {
     console.error('verifyOtp error:', err);
