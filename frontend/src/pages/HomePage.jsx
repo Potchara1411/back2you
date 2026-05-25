@@ -11,10 +11,11 @@ const postFilters = [
   { label: 'Lost', params: { type: 'lost', status: 'open' } },
   { label: 'Found', params: { type: 'found', status: 'open' } },
   { label: 'Claimed', params: { status: 'claimed' } },
+  { label: 'Pending', params: { status: 'pending_resolution' } },
   { label: 'Resolved', params: { status: 'resolved' } },
 ];
 const statusMeanings = [
-  ['Unsolved', 'Items that are still active. This includes open lost/found posts and claimed posts.'],
+  ['Unsolved', 'Items that are still active. This includes open, claimed, and pending resolution posts.'],
   ['Lost', 'The owner lost this item and is still looking for it.'],
   ['Found', 'Someone found this item and is waiting for the owner.'],
   ['Claimed', 'Someone has started the return process, but it is not finished yet.'],
@@ -135,7 +136,7 @@ export default function HomePage() {
           </div>
         )}
 
-        <div className="mb-5 grid grid-cols-5 gap-1.5">
+        <div className="mb-5 grid grid-cols-6 gap-1.5">
           {postFilters.map((filter) => (
             <button
               key={filter.label}
