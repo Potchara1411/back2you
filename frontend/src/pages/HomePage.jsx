@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import MobileLayout from '../components/MobileLayout';
 import PostCard from '../components/PostCard';
-import { InfoIcon } from '../components/Icons';
+import { InfoIcon, RefreshIcon } from '../components/Icons';
 import { getMockList } from '../data/mockPosts';
 import api from '../services/api';
 
@@ -11,11 +11,10 @@ const postFilters = [
   { label: 'Lost', params: { type: 'lost', status: 'open' } },
   { label: 'Found', params: { type: 'found', status: 'open' } },
   { label: 'Claimed', params: { status: 'claimed' } },
-  { label: 'Pending', params: { status: 'pending_resolution' } },
   { label: 'Resolved', params: { status: 'resolved' } },
 ];
 const statusMeanings = [
-  ['Unsolved', 'Items that are still active. This includes open, claimed, and pending resolution posts.'],
+  ['Unsolved', 'Active posts that still need attention. This includes Lost, Found, and Claimed items.'],
   ['Lost', 'The owner lost this item and is still looking for it.'],
   ['Found', 'Someone found this item and is waiting for the owner.'],
   ['Claimed', 'Someone has started the return process, but it is not finished yet.'],
@@ -75,7 +74,7 @@ export default function HomePage() {
     })
       .then(({ data }) => {
         if (!isActive) return;
-        setPosts(data.items);
+        setPosts(data.items.filter((post) => post.status !== 'pending_resolution'));
         setPagination(data.pagination);
       })
       .catch(() => {
@@ -98,36 +97,47 @@ export default function HomePage() {
 
   return (
     <MobileLayout>
-      <section className="px-6 py-7">
+      <section className="px-6 py-5">
         <button
-          className="mb-5 w-full rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-left"
+          className="mb-4 w-full rounded-xl border border-blue-100 bg-blue-50 px-3.5 py-2.5 text-left"
           type="button"
           onClick={() => setShowNotice((isOpen) => !isOpen)}
         >
           <div className="flex items-center justify-between gap-3">
-            <span className="text-sm font-semibold text-slate-950">{notice.title}</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{notice.title}</span>
             <span className="text-xs font-medium text-blue-600">{showNotice ? 'Hide' : 'More'}</span>
           </div>
-          <p className="mt-1 truncate text-sm text-blue-700">{notice.summary}</p>
+          <p className="mt-0.5 truncate text-sm font-medium text-blue-700">{notice.summary}</p>
           {showNotice && (
-            <p className="mt-2 text-sm leading-5 text-slate-600">{notice.detail}</p>
+            <p className="mt-1.5 text-sm leading-5 text-slate-600">{notice.detail}</p>
           )}
         </button>
 
-        <div className="mb-5 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between">
           <h1 className="text-xl font-semibold text-slate-500">Recent Posts</h1>
-          <button
-            className="rounded-full p-1 text-slate-400"
-            type="button"
-            aria-label="Post status meanings"
-            onClick={() => setShowInfo((isOpen) => !isOpen)}
-          >
-            <InfoIcon className="h-6 w-6" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded-full p-1 text-slate-400"
+              type="button"
+              aria-label="Post status meanings"
+              onClick={() => setShowInfo((isOpen) => !isOpen)}
+            >
+              <InfoIcon className="h-6 w-6" />
+            </button>
+            <button
+              className="rounded-full p-1 text-slate-400 disabled:opacity-50"
+              type="button"
+              aria-label="Refresh recent posts"
+              disabled={isLoading || isLoadingMore}
+              onClick={() => fetchPosts(1, activeFilter)}
+            >
+              <RefreshIcon className="h-6 w-6" />
+            </button>
+          </div>
         </div>
 
         {showInfo && (
-          <div className="mb-5 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-slate-700">
+          <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 p-3 text-sm text-slate-700">
             {statusMeanings.map(([term, meaning]) => (
               <p key={term} className="mb-2 last:mb-0">
                 <span className="font-semibold text-slate-950">{term}:</span> {meaning}
@@ -136,21 +146,24 @@ export default function HomePage() {
           </div>
         )}
 
-        <div className="mb-5 grid grid-cols-6 gap-1.5">
-          {postFilters.map((filter) => (
-            <button
-              key={filter.label}
-              className={`rounded-full px-1.5 py-2 text-[11px] font-semibold ${
-                activeFilter.label === filter.label
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 text-slate-600'
-              }`}
-              type="button"
-              onClick={() => selectFilter(filter)}
-            >
-              {filter.label}
-            </button>
-          ))}
+        <div className="relative mb-4">
+          <div className="flex gap-2 overflow-x-auto pb-1 pr-5">
+            {postFilters.map((filter) => (
+              <button
+                key={filter.label}
+                className={`shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 text-[11px] font-semibold leading-none ${
+                  activeFilter.label === filter.label
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-100 text-slate-600'
+                }`}
+                type="button"
+                onClick={() => selectFilter(filter)}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+          <div className="pointer-events-none absolute bottom-1 right-0 top-0 w-7 bg-gradient-to-l from-white to-white/0" />
         </div>
 
         {error && (
