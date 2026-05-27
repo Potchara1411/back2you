@@ -14,6 +14,7 @@ const STATUS_TRANSITIONS = {
   pending_resolution: new Set([]),
   resolved: new Set([]),
 };
+const CLAIMABLE_STATUSES = new Set(['open', 'claimed']);
 
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(value, 10);
@@ -527,9 +528,9 @@ async function createClaimRequest(req, res) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Owners cannot claim their own posts' });
     }
-    if (post.status !== 'open') {
+    if (!CLAIMABLE_STATUSES.has(post.status)) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'This post is not open for new claims' });
+      return res.status(400).json({ error: 'This post is not accepting new claims right now' });
     }
 
     const duplicate = await client.query(
@@ -646,9 +647,9 @@ async function updateClaimRequest(req, res) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'This claim request has already been reviewed' });
     }
-    if (nextStatus === 'accepted' && post.status !== 'open') {
+    if (nextStatus === 'accepted' && !CLAIMABLE_STATUSES.has(post.status)) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Only open posts can accept claim requests' });
+      return res.status(400).json({ error: 'Only open or claimed posts can accept claim requests' });
     }
 
     const updatedClaim = await client.query(
@@ -666,15 +667,6 @@ async function updateClaimRequest(req, res) {
     let updatedPost = post;
 
     if (nextStatus === 'accepted') {
-      await client.query(
-        `UPDATE claim_requests
-         SET status = 'rejected',
-             updated_at = NOW()
-         WHERE post_id = $1
-           AND id <> $2
-           AND status = 'pending'`,
-        [req.params.id, req.params.claimId],
-      );
       const postUpdate = await client.query(
         `UPDATE posts
          SET status = 'claimed',
