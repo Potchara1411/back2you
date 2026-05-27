@@ -15,7 +15,7 @@ export function AppHeader() {
         <img
           alt="KAIST"
           className="h-8 w-24 shrink-0 object-contain"
-          src="/kaist-logo.svg"
+          src="/kaist-logo.jpeg"
         />
         <div className="text-xl font-semibold tracking-normal text-slate-950">
           KAIST Lost & Found
