@@ -107,6 +107,7 @@ async function searchPosts(req, res) {
     const keywordTerms = keyword ? getKeywordTerms(keyword) : [];
     const filteredPosts = mockPosts
       .filter((post) => post.status !== 'hidden')
+      .filter((post) => post.status !== 'pending_resolution')
       .filter((post) => {
         const matchesKeyword = !keyword || keywordTerms.some((term) => (
           includesText(post.title, term)
@@ -138,7 +139,7 @@ async function searchPosts(req, res) {
     return res.json(paginatePosts(filteredPosts, page, limit));
   }
 
-  const conditions = ['p.is_archived = FALSE', "p.status <> 'hidden'"];
+  const conditions = ['p.is_archived = FALSE', "p.status <> 'hidden'", "p.status <> 'pending_resolution'"];
   const values = [];
 
   if (keyword) {
