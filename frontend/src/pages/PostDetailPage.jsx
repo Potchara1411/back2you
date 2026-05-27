@@ -18,6 +18,7 @@ const nextStatuses = {
   pending_resolution: [],
   resolved: [],
 };
+const claimableStatuses = new Set(['open', 'claimed']);
 
 const statusCopy = {
   open: 'Open',
@@ -301,7 +302,7 @@ export default function PostDetailPage() {
     Number(claim.claimant_user_id) === Number(user?.id)
     && ['pending', 'accepted'].includes(claim.status)
   ));
-  const canSubmitClaim = Boolean(user && post && !isPostOwner && post.status === 'open' && !ownActiveClaim);
+  const canSubmitClaim = Boolean(user && post && !isPostOwner && claimableStatuses.has(post.status) && !ownActiveClaim);
   const canReviewClaims = Boolean(post && (isPostOwner || isAdmin));
 
   function updateField(field, value) {
@@ -445,7 +446,6 @@ export default function PostDetailPage() {
         ...data.post,
         claim_requests: (current.claim_requests || []).map((item) => {
           if (item.id === claim.id) return { ...item, ...data.claim };
-          if (status === 'accepted' && item.status === 'pending') return { ...item, status: 'rejected' };
           return item;
         }),
       }));
