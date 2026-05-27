@@ -70,6 +70,26 @@ const previewPosts = [
       proof_images: [],
       status: 'accepted',
     },
+    accepted_claims: [
+      {
+        claimant_name: 'Yilei Yan',
+        claimant_email: 'yilei@kaist.ac.kr',
+        message: 'I can identify the case scratches and have the matching serial photo.',
+        found_location: 'N10 lobby',
+        found_date: '2026-05-17T12:30:00Z',
+        proof_images: [],
+        status: 'accepted',
+      },
+      {
+        claimant_name: 'Eric Kim',
+        claimant_email: 'eric@kaist.ac.kr',
+        message: 'I also have proof from the handoff chat.',
+        found_location: 'N10 lobby',
+        found_date: '2026-05-17T12:45:00Z',
+        proof_images: [],
+        status: 'accepted',
+      },
+    ],
     claim_requests: [],
     created_at: '2026-05-08T12:30:00Z',
     updated_at: '2026-05-17T12:30:00Z',
@@ -466,22 +486,29 @@ export default function AdminPage() {
     }
   }
 
-  async function resolvePost(post) {
-    const confirmed = window.confirm('Mark this pending post as resolved?');
+  async function resolvePost(post, claim) {
+    if (!claim?.id && !isPreview) {
+      setNotice('Select one accepted claim before resolving.');
+      return;
+    }
+
+    const claimant = claim?.claimant_name || claim?.claimant_email || 'this claimant';
+    const confirmed = window.confirm(`Resolve this post for ${claimant}? Other claims will be rejected.`);
     if (!confirmed) return;
 
     if (isPreview) {
       setResolutions((current) => current.filter((item) => item.id !== post.id));
       updatePostEverywhere(post.id, (item) => ({ ...item, status: 'resolved' }));
-      setNotice('Preview post resolved.');
+      setNotice('Preview post resolved for the selected claim.');
       return;
     }
 
     try {
-      const { data } = await api.patch(`/admin/posts/${post.id}/resolve`);
+      const { data } = await api.patch(`/admin/posts/${post.id}/resolve`, { claimId: claim.id });
       setResolutions((current) => current.filter((item) => item.id !== post.id));
       updatePostEverywhere(post.id, (item) => ({ ...item, ...data.post }));
-      setNotice(data.noticeSent ? 'Post resolved and owner notified.' : 'Post resolved.');
+      const rejectedCopy = data.rejectedClaimCount ? ` ${data.rejectedClaimCount} other claim(s) rejected.` : '';
+      setNotice(data.noticeSent ? `Post resolved and owner notified.${rejectedCopy}` : `Post resolved.${rejectedCopy}`);
     } catch (error) {
       setNotice(error.response?.data?.error || 'Failed to resolve post.');
     }
@@ -757,9 +784,11 @@ function AppHeader({ onRefresh, onLogout }) {
   return (
     <header className="flex h-[61px] shrink-0 items-center border-b border-[#F3F4F6] bg-white px-5">
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        <div className="flex h-[18px] w-16 items-center justify-center rounded-sm bg-[#155DFC] text-[10px] font-bold tracking-wide text-white">
-          KAIST
-        </div>
+        <img
+          alt="KAIST"
+          className="h-8 w-24 shrink-0 object-contain"
+          src="/kaist-logo.svg"
+        />
         <h1 className="truncate text-[18px] font-medium leading-7 tracking-normal text-[#101828]">
           Admin Console
         </h1>
@@ -1256,36 +1285,59 @@ function ResolutionCard({ post, onResolve, onReject }) {
   return (
     <article className="rounded-[14px] border border-[#FDE68A] bg-white p-[17px] shadow-sm">
       <PostSummary post={post} />
-      <ClaimReviewDetails post={post} />
+      <ClaimReviewDetails post={post} onResolve={onResolve} />
       <div className="mt-3 rounded-[10px] bg-[#FFFBEB] px-3 py-2 text-[12px] leading-4 text-[#92400E]">
-        Review owner, date, and uploaded images before finalizing resolution.
+        Choose exactly one accepted claim to finalize. Other claims will be rejected.
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <SmallActionButton onClick={() => onResolve(post)} label="Resolve" icon={<IconCheck />} tone="blue" />
-        <SmallActionButton onClick={() => onReject(post)} label="Reject" icon={<IconBlock />} tone="red" />
+      <div className="mt-3 grid grid-cols-1 gap-2">
+        <SmallActionButton onClick={() => onReject(post)} label="Reject Resolution" icon={<IconBlock />} tone="red" />
       </div>
     </article>
   );
 }
 
-function ClaimReviewDetails({ post }) {
+function ClaimReviewDetails({ post, onResolve }) {
   const claims = Array.isArray(post.claim_requests) ? post.claim_requests : [];
-  const claim = post.accepted_claim || claims.find((item) => item.status === 'accepted') || claims[0];
-  const proofImages = Array.isArray(claim?.proof_images) ? claim.proof_images.filter(Boolean) : [];
+  const acceptedClaims = Array.isArray(post.accepted_claims)
+    ? post.accepted_claims
+    : claims.filter((item) => item.status === 'accepted');
+  const visibleAcceptedClaims = acceptedClaims.length
+    ? acceptedClaims
+    : [post.accepted_claim].filter(Boolean);
 
-  if (!claim) {
+  if (!visibleAcceptedClaims.length) {
     return (
       <div className="mt-3 rounded-[10px] border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-3">
-        <p className="text-[12px] font-medium text-[#6A7282]">No claim request details found.</p>
+        <p className="text-[12px] font-medium text-[#6A7282]">No accepted claim request details found.</p>
       </div>
     );
   }
 
   return (
     <div className="mt-3 rounded-[10px] border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6A7282]">
+        Accepted claims ({visibleAcceptedClaims.length})
+      </p>
+      <div className="mt-3 space-y-3">
+        {visibleAcceptedClaims.map((claim, index) => (
+          <AcceptedClaimSummary
+            key={claim.id || `${claim.claimant_email || 'claim'}-${index}`}
+            claim={claim}
+            onResolve={() => onResolve(post, claim)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AcceptedClaimSummary({ claim, onResolve }) {
+  const proofImages = Array.isArray(claim?.proof_images) ? claim.proof_images.filter(Boolean) : [];
+
+  return (
+    <div className="rounded-[10px] border border-[#E5E7EB] bg-white px-3 py-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6A7282]">Accepted claim</p>
           <p className="mt-1 break-words text-[13px] font-semibold leading-5 text-[#101828]">
             {claim.claimant_name || claim.claimant_email || `User #${claim.claimant_user_id}`}
           </p>
@@ -1328,6 +1380,15 @@ function ClaimReviewDetails({ post }) {
           ))}
         </div>
       )}
+
+      <button
+        type="button"
+        onClick={onResolve}
+        className="mt-3 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-[10px] bg-[#EFF6FF] px-2 text-center text-[12px] font-medium leading-4 text-[#1447E6]"
+      >
+        <IconCheck />
+        Resolve this claim
+      </button>
     </div>
   );
 }
