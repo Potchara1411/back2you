@@ -168,17 +168,17 @@ function parseClaimBody(body) {
   return { message, foundLocation, foundDate, proofImages };
 }
 
-function validateClaimInput(input, res) {
+function validateClaimInput(input, post, res) {
   if (!input.message) {
     res.status(400).json({ error: 'Claim message is required' });
     return false;
   }
-  if (!input.foundLocation) {
+  if (post?.type === 'lost' && !input.foundLocation) {
     res.status(400).json({ error: 'Found location is required' });
     return false;
   }
   if (!input.foundDate) {
-    res.status(400).json({ error: 'Found date and time are required' });
+    res.status(400).json({ error: post?.type === 'lost' ? 'Found date is required' : 'Lost date is required' });
     return false;
   }
   const foundAt = new Date(input.foundDate);
@@ -417,11 +417,6 @@ async function editPost(req, res) {
 
     const input = parsePostBody(req.body);
     if (!validatePostInput(input, res)) return;
-    const existingImages = Array.isArray(post.images) ? post.images.filter(Boolean) : [];
-
-    if (input.images.length > existingImages.length) {
-      return res.status(400).json({ error: 'You can replace existing photos, but cannot add more photos while editing' });
-    }
 
     const { rows } = await pool.query(
       `UPDATE posts
@@ -490,7 +485,6 @@ async function createClaimRequest(req, res) {
   try {
     await ensureClaimRequestsTable();
     const input = parseClaimBody(req.body);
-    if (!validateClaimInput(input, res)) return;
 
     await client.query('BEGIN');
     const { rows } = await client.query('SELECT * FROM posts WHERE id = $1 FOR UPDATE', [req.params.id]);
@@ -507,6 +501,10 @@ async function createClaimRequest(req, res) {
     if (post.status !== 'open') {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'This post is not open for new claims' });
+    }
+    if (!validateClaimInput(input, post, res)) {
+      await client.query('ROLLBACK');
+      return;
     }
 
     const duplicate = await client.query(

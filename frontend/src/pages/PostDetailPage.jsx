@@ -1,14 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { CalendarIcon, ChevronLeftIcon, LocationIcon, TagIcon } from '../components/Icons';
+import { CalendarIcon, ChevronLeftIcon, LocationIcon, PlusIcon, TagIcon } from '../components/Icons';
 import MobileLayout from '../components/MobileLayout';
 import { useAuth } from '../context/AuthContext';
 import { getMockPost } from '../data/mockPosts';
+import {
+  buildingsByArea,
+  composeLocation,
+  DEFAULT_CATEGORY_OPTIONS,
+  findAreaForBuilding,
+  getLocationDetails,
+  parseLocationParts,
+  toCategoryOptions,
+} from '../data/postOptions';
 import api from '../services/api';
 
+const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const todayValue = new Date().toISOString().slice(0, 10);
-const nowDateTimeValue = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 const nextStatuses = {
   open: [],
   hidden: [],
@@ -133,10 +142,103 @@ function StatusStepper({ status }) {
   );
 }
 
-function EditForm({ form, error, onCancel, onChange, onImageReplace, onSubmit }) {
+function FieldShell({ icon: FieldIcon, label, children }) {
+  return (
+    <label className="block">
+      <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
+        {FieldIcon && <FieldIcon className="h-4 w-4 text-blue-600" />}
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+function LocationSelector({ label, location, onChange }) {
+  const initialLocation = useMemo(() => parseLocationParts(location), [location]);
+  const [area, setArea] = useState(initialLocation.area);
+  const [building, setBuilding] = useState(initialLocation.building);
+  const [locationDetail, setLocationDetail] = useState(initialLocation.detail);
+  const [isOpen, setIsOpen] = useState(false);
+  const locationDetailOptions = useMemo(() => getLocationDetails(building), [building]);
+
+  function applyLocation(nextArea, nextBuilding, nextLocationDetail) {
+    onChange(composeLocation(nextArea, nextBuilding, nextLocationDetail));
+  }
+
+  function handleBuildingChange(value) {
+    const nextArea = findAreaForBuilding(value);
+    setArea(nextArea);
+    setBuilding(value);
+    setLocationDetail('');
+    applyLocation(nextArea, value, '');
+  }
+
+  function handleLocationDetailChange(value) {
+    setLocationDetail(value);
+    applyLocation(area, building, value);
+  }
+
+  return (
+    <FieldShell label={label} icon={LocationIcon}>
+      <div>
+        <button
+          className={`flex min-h-[52px] w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-base outline-none transition ${
+            isOpen || location
+              ? 'border-blue-200 bg-blue-50 text-blue-700'
+              : 'border-slate-200 bg-white text-slate-500'
+          }`}
+          type="button"
+          onClick={() => setIsOpen((current) => !current)}
+        >
+          <span className="min-w-0 flex-1 truncate">
+            {location || 'Choose campus location'}
+          </span>
+          <span className="shrink-0 text-xs font-semibold text-blue-600">
+            {isOpen ? 'Close' : 'Detail'}
+          </span>
+        </button>
+
+        {isOpen && (
+          <div className="mt-3 space-y-2 rounded-2xl border border-slate-200 bg-white p-3">
+            <select
+              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
+              value={building}
+              onChange={(event) => handleBuildingChange(event.target.value)}
+            >
+              <option value="">Choose KAIST building</option>
+              {Object.entries(buildingsByArea).map(([areaName, buildingNames]) => (
+                <optgroup key={areaName} label={areaName}>
+                  {buildingNames.map((buildingName) => (
+                    <option key={buildingName} value={buildingName}>{buildingName}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+
+            {building && (
+              <select
+                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
+                value={locationDetail}
+                onChange={(event) => handleLocationDetailChange(event.target.value)}
+              >
+                <option value="">Any floor / entrance</option>
+                {locationDetailOptions.map((detail) => (
+                  <option key={detail} value={detail}>{detail}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
+      </div>
+    </FieldShell>
+  );
+}
+
+function EditForm({ categories, form, error, onCancel, onChange, onImageChange, onImageRemove, onSubmit }) {
   return (
     <MobileLayout showHeader={false}>
-      <form className="min-h-full bg-white" onSubmit={onSubmit}>
+      <form className="flex min-h-full flex-col bg-white" onSubmit={onSubmit}>
         <header className="sticky top-0 z-20 border-b border-slate-100 bg-white px-5 pb-4 pt-5">
           <div className="flex items-center gap-3">
             <button
@@ -154,7 +256,7 @@ function EditForm({ form, error, onCancel, onChange, onImageReplace, onSubmit })
           </div>
         </header>
 
-        <section className="space-y-5 px-5 py-5">
+        <section className="space-y-5 px-5 pb-28 pt-5">
           <div className="grid grid-cols-2 rounded-2xl bg-slate-100 p-1">
             {['lost', 'found'].map((type) => (
               <button
@@ -170,54 +272,98 @@ function EditForm({ form, error, onCancel, onChange, onImageReplace, onSubmit })
             ))}
           </div>
 
-          <input
-            className="h-[52px] w-full rounded-2xl border border-slate-200 px-4 text-base font-semibold outline-none focus:border-blue-500"
-            required
-            value={form.title}
-            onChange={(event) => onChange('title', event.target.value)}
+          <FieldShell label="Title">
+            <input
+              className="h-[52px] w-full rounded-2xl border border-slate-200 px-4 text-base font-semibold outline-none focus:border-blue-500"
+              required
+              value={form.title}
+              onChange={(event) => onChange('title', event.target.value)}
+            />
+          </FieldShell>
+
+          <FieldShell label="Description">
+            <textarea
+              className="min-h-32 w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-base outline-none focus:border-blue-500"
+              value={form.description}
+              onChange={(event) => onChange('description', event.target.value)}
+            />
+          </FieldShell>
+
+          <FieldShell label="Category" icon={TagIcon}>
+            <select
+              className="h-[52px] w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-950 outline-none focus:border-blue-500"
+              required
+              value={form.category_id}
+              onChange={(event) => onChange('category_id', event.target.value)}
+            >
+              <option value="">Choose category</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>{category.label}</option>
+              ))}
+            </select>
+          </FieldShell>
+
+          <LocationSelector
+            label={form.type === 'lost' ? 'Lost location' : 'Found location'}
+            location={form.location}
+            onChange={(value) => onChange('location', value)}
           />
-          <textarea
-            className="min-h-32 w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-base outline-none focus:border-blue-500"
-            value={form.description}
-            onChange={(event) => onChange('description', event.target.value)}
-          />
-          <input
-            className="h-[52px] w-full rounded-2xl border border-slate-200 px-4 text-base outline-none focus:border-blue-500"
-            value={form.location}
-            onChange={(event) => onChange('location', event.target.value)}
-          />
-          <input
-            className="h-[52px] w-full rounded-2xl border border-slate-200 px-4 text-base outline-none focus:border-blue-500"
-            type="date"
-            max={todayValue}
-            value={form.date_occurred}
-            onChange={(event) => onChange('date_occurred', event.target.value)}
-          />
-          {form.images?.length > 0 && (
-            <div>
-              <p className="mb-2 text-sm font-semibold text-slate-700">Replace existing photos</p>
-              <div className="grid grid-cols-3 gap-3">
-                {form.images.map((image, index) => (
-                  <label key={`${image}-${index}`} className="relative block cursor-pointer">
-                  <img className="aspect-square rounded-2xl object-cover" src={image} alt="Selected upload preview" />
-                    <span className="absolute inset-x-2 bottom-2 rounded-xl bg-white/90 px-2 py-1 text-center text-xs font-bold text-blue-600 shadow">
-                      Replace
-                    </span>
-                    <input className="sr-only" type="file" accept="image/*" onChange={(event) => onImageReplace(event, index)} />
-                  </label>
-                ))}
-              </div>
+
+          <FieldShell label={form.type === 'lost' ? 'Lost date' : 'Found date'} icon={CalendarIcon}>
+            <input
+              className="h-[52px] w-full rounded-2xl border border-slate-200 px-4 text-base outline-none focus:border-blue-500"
+              type="date"
+              max={todayValue}
+              value={form.date_occurred}
+              onChange={(event) => onChange('date_occurred', event.target.value)}
+            />
+          </FieldShell>
+
+          <div>
+            <p className="mb-2 text-sm font-semibold text-slate-700">Photos</p>
+            <div className="grid grid-cols-3 gap-3">
+              {Array.from({ length: MAX_IMAGES }).map((_, index) => {
+                const image = form.images?.[index];
+                return (
+                  <div
+                    key={index}
+                    className="relative aspect-square overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-slate-50"
+                  >
+                    <label className="flex h-full w-full cursor-pointer items-center justify-center">
+                      {image ? (
+                        <>
+                          <img className="h-full w-full object-cover" src={image} alt="Selected upload preview" />
+                          <span className="absolute inset-x-2 bottom-2 rounded-xl bg-white/90 px-2 py-1 text-center text-xs font-bold text-blue-600 shadow">
+                            Replace
+                          </span>
+                        </>
+                      ) : (
+                        <div className="flex flex-col items-center gap-1 text-slate-400">
+                          <PlusIcon className="h-6 w-6" />
+                          <span className="text-xs font-medium">{index + 1}</span>
+                        </div>
+                      )}
+                      <input className="sr-only" type="file" accept="image/*" onChange={(event) => onImageChange(event, index)} />
+                    </label>
+                    {image && (
+                      <button
+                        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-lg font-bold leading-none text-red-500 shadow-sm"
+                        type="button"
+                        aria-label={`Remove photo ${index + 1}`}
+                        onClick={() => onImageRemove(index)}
+                      >
+                        x
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          )}
-          {!form.images?.length && (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-center text-sm font-medium text-slate-500">
-              This post has no photos to replace.
-            </div>
-          )}
+          </div>
           {error && <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600">{error}</p>}
         </section>
 
-        <div className="sticky bottom-24 mt-auto border-t border-slate-100 bg-white px-5 py-4">
+        <div className="sticky bottom-0 z-20 mt-auto border-t border-slate-100 bg-white px-5 pb-6 pt-4">
           <button className="h-14 w-full rounded-2xl bg-blue-600 text-base font-bold text-white" type="submit">
             Save Changes
           </button>
@@ -234,6 +380,7 @@ export default function PostDetailPage() {
   const [post, setPost] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState(null);
+  const [categories, setCategories] = useState(DEFAULT_CATEGORY_OPTIONS);
   const [error, setError] = useState('');
   const [activeImage, setActiveImage] = useState(0);
   const [claimForm, setClaimForm] = useState({
@@ -243,6 +390,12 @@ export default function PostDetailPage() {
     proof_images: [],
   });
   const [claimSubmitting, setClaimSubmitting] = useState(false);
+
+  useEffect(() => {
+    api.get('/posts/categories')
+      .then(({ data }) => setCategories(toCategoryOptions(data)))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     let isActive = true;
@@ -300,12 +453,18 @@ export default function PostDetailPage() {
   ));
   const canSubmitClaim = Boolean(user && post && !isPostOwner && post.status === 'open' && !ownActiveClaim);
   const canReviewClaims = Boolean(post && (isPostOwner || isAdmin));
+  const selectedCategoryId = form?.category_id || categories.find((category) => category.label === post?.category_name)?.id || '';
+  const isClaimingLostPost = post?.type === 'lost';
+  const claimDateLabel = isClaimingLostPost ? 'Found date' : 'Lost date';
+  const claimMessagePlaceholder = isClaimingLostPost
+    ? 'Message for the owner: identifying details, pickup plan, or proof.'
+    : 'Message for the finder: identifying details that prove this item is yours.';
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
-  async function replaceImage(event, index) {
+  async function changeImage(event, index) {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -323,6 +482,12 @@ export default function PostDetailPage() {
     event.target.value = '';
   }
 
+  function removeImage(index) {
+    const nextImages = [...(form.images || [])];
+    nextImages[index] = undefined;
+    updateField('images', nextImages);
+  }
+
   async function saveEdit(event) {
     event.preventDefault();
     if (!canEditPost) {
@@ -338,7 +503,8 @@ export default function PostDetailPage() {
     try {
       const { data } = await api.put(`/posts/${id}`, {
         ...form,
-        category_id: form.category_id || null,
+        category_id: form.category_id || selectedCategoryId || null,
+        images: (form.images || []).filter(Boolean),
       });
       setPost(normalizePost(data));
       setEditMode(false);
@@ -400,12 +566,16 @@ export default function PostDetailPage() {
   async function submitClaim(event) {
     event.preventDefault();
     if (!canSubmitClaim) return;
-    if (!claimForm.found_location.trim() || !claimForm.found_date || !claimForm.message.trim()) {
-      setError('Add found location, found date/time, and a message.');
+    if (isClaimingLostPost && !claimForm.found_location.trim()) {
+      setError('Add where you found the item.');
       return;
     }
-    if (claimForm.found_date > nowDateTimeValue) {
-      setError('Found date cannot be in the future.');
+    if (!claimForm.found_date || !claimForm.message.trim()) {
+      setError(`Add ${claimDateLabel.toLowerCase()} and a message.`);
+      return;
+    }
+    if (claimForm.found_date > todayValue) {
+      setError(`${claimDateLabel} cannot be in the future.`);
       return;
     }
 
@@ -414,7 +584,7 @@ export default function PostDetailPage() {
     try {
       const { data } = await api.post(`/posts/${id}/claims`, {
         message: claimForm.message.trim(),
-        found_location: claimForm.found_location.trim(),
+        found_location: isClaimingLostPost ? claimForm.found_location.trim() : '',
         found_date: claimForm.found_date,
         proof_images: claimForm.proof_images,
       });
@@ -482,11 +652,13 @@ export default function PostDetailPage() {
   if (editMode) {
     return (
       <EditForm
-        form={form}
+        categories={categories}
+        form={{ ...form, category_id: selectedCategoryId }}
         error={error}
         onCancel={() => setEditMode(false)}
         onChange={updateField}
-        onImageReplace={replaceImage}
+        onImageChange={changeImage}
+        onImageRemove={removeImage}
         onSubmit={saveEdit}
       />
     );
@@ -565,9 +737,6 @@ export default function PostDetailPage() {
           </div>
 
           <StatusStepper status={post.status} />
-          <p className="text-sm leading-6 text-slate-500">
-            {post.type === 'lost' ? 'Lost' : 'Found'} is the post type. {statusCopy[post.status] || post.status} is the return status.
-          </p>
 
           {canSubmitClaim && (
             <form className="space-y-3 rounded-2xl border border-blue-100 bg-blue-50 p-4" onSubmit={submitClaim}>
@@ -575,28 +744,28 @@ export default function PostDetailPage() {
                 <h2 className="text-base font-bold text-slate-950">
                   {post.type === 'lost' ? 'I found this' : 'Claim this item'}
                 </h2>
-                <p className="mt-1 text-sm text-slate-600">
-                  Lost/Found is the post type. Open/Claimed/Pending Resolution/Resolved is the return journey.
-                </p>
               </div>
+              {isClaimingLostPost && (
+                <input
+                  className="h-12 w-full rounded-2xl border border-blue-100 bg-white px-4 text-sm outline-none focus:border-blue-500"
+                  placeholder="Found location"
+                  required
+                  value={claimForm.found_location}
+                  onChange={(event) => updateClaimField('found_location', event.target.value)}
+                />
+              )}
               <input
                 className="h-12 w-full rounded-2xl border border-blue-100 bg-white px-4 text-sm outline-none focus:border-blue-500"
-                placeholder="Found location"
                 required
-                value={claimForm.found_location}
-                onChange={(event) => updateClaimField('found_location', event.target.value)}
-              />
-              <input
-                className="h-12 w-full rounded-2xl border border-blue-100 bg-white px-4 text-sm outline-none focus:border-blue-500"
-                required
-                type="datetime-local"
-                max={nowDateTimeValue}
+                aria-label={claimDateLabel}
+                type="date"
+                max={todayValue}
                 value={claimForm.found_date}
                 onChange={(event) => updateClaimField('found_date', event.target.value)}
               />
               <textarea
                 className="min-h-24 w-full resize-none rounded-2xl border border-blue-100 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500"
-                placeholder="Message for the owner: identifying details, pickup plan, or proof."
+                placeholder={claimMessagePlaceholder}
                 required
                 value={claimForm.message}
                 onChange={(event) => updateClaimField('message', event.target.value)}
@@ -648,8 +817,10 @@ export default function PostDetailPage() {
                     </span>
                   </div>
                   <div className="mt-3 space-y-1 text-sm leading-6 text-slate-600">
-                    <p><span className="font-semibold text-slate-900">Found location:</span> {claim.found_location || 'Not provided'}</p>
-                    <p><span className="font-semibold text-slate-900">Found date:</span> {formatDate(claim.found_date)}</p>
+                    {post.type === 'lost' && (
+                      <p><span className="font-semibold text-slate-900">Found location:</span> {claim.found_location || 'Not provided'}</p>
+                    )}
+                    <p><span className="font-semibold text-slate-900">{post.type === 'lost' ? 'Found date' : 'Lost date'}:</span> {formatDate(claim.found_date)}</p>
                     <p className="whitespace-pre-wrap">{claim.message || claim.details}</p>
                   </div>
                   {claim.proof_images?.[0] && (
