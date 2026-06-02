@@ -525,6 +525,10 @@ async function createClaimRequest(req, res) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Post not found' });
     }
+    if (req.user.role === 'admin') {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Admins cannot submit claim requests' });
+    }
     if (canModify(req.user, post)) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Owners cannot claim their own posts' });

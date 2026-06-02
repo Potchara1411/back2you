@@ -302,7 +302,7 @@ export default function PostDetailPage() {
     Number(claim.claimant_user_id) === Number(user?.id)
     && ['pending', 'accepted'].includes(claim.status)
   ));
-  const canSubmitClaim = Boolean(user && post && !isPostOwner && claimableStatuses.has(post.status) && !ownActiveClaim);
+  const canSubmitClaim = Boolean(user && post && !isAdmin && !isPostOwner && claimableStatuses.has(post.status) && !ownActiveClaim);
   const canReviewClaims = Boolean(post && (isPostOwner || isAdmin));
 
   function updateField(field, value) {

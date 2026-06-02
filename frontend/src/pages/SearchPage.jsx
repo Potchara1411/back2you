@@ -29,7 +29,7 @@ const postFilters = [
   { label: 'Resolved', params: { status: 'resolved' } },
 ];
 const DEFAULT_CATEGORIES = ['Electronics', 'Clothing', 'Books', 'Accessories', 'Keys', 'Wallet', 'ID Card', 'Other'];
-const buildingsByArea = {
+export const buildingsByArea = {
   North: [
     'N1 IT Convergence Building',
     'N2 Branch Administration B/D',
@@ -147,7 +147,7 @@ function guessFloorCount(buildingName) {
   return 4;
 }
 
-function getLocationDetails(buildingName) {
+export function getLocationDetails(buildingName) {
   return [
     'Near entrance',
     ...Array.from({ length: guessFloorCount(buildingName) }, (_, index) => getFloorLabel(index + 1)),
