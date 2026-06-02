@@ -722,7 +722,7 @@ async function getUserActivity(req, res) {
     const [posts, comments, reports] = await Promise.all([
       pool.query(
         `
-          SELECT id, title AS label, status, created_at
+          SELECT id, id AS post_id, title AS label, status, created_at
           FROM posts
           WHERE user_id = $1
           ORDER BY created_at DESC
@@ -732,7 +732,7 @@ async function getUserActivity(req, res) {
       ),
       pool.query(
         `
-          SELECT c.id, p.title AS post_title, c.content AS label, c.created_at
+          SELECT c.id, p.id AS post_id, p.title AS post_title, c.content AS label, c.created_at
           FROM comments c
           LEFT JOIN posts p ON p.id = c.post_id
           WHERE c.user_id = $1
@@ -743,7 +743,7 @@ async function getUserActivity(req, res) {
       ),
       pool.query(
         `
-          SELECT r.id, p.title AS post_title, r.reason AS label, r.created_at
+          SELECT r.id, p.id AS post_id, p.title AS post_title, r.reason AS label, r.created_at
           FROM reports r
           LEFT JOIN posts p ON p.id = r.post_id
           WHERE r.reported_by = $1
