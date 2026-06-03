@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { buildingsByArea, getLocationDetails } from '../data/postOptions';
 import api from '../services/api';
-import { buildingsByArea, getLocationDetails } from './SearchPage';
 
 const previewPosts = [
   {
@@ -109,14 +109,6 @@ const previewCategories = [
   { id: 'cat-1', name: 'Electronics', active_post_count: 2, total_post_count: 2 },
   { id: 'cat-2', name: 'Clothing', active_post_count: 1, total_post_count: 1 },
   { id: 'cat-3', name: 'Other', active_post_count: 0, total_post_count: 0 },
-];
-
-const sections = [
-  { id: 'posts', label: 'Posts' },
-  { id: 'reports', label: 'Reports' },
-  { id: 'resolutions', label: 'Resolve' },
-  { id: 'users', label: 'Users' },
-  { id: 'settings', label: 'Settings' },
 ];
 
 const filters = [
