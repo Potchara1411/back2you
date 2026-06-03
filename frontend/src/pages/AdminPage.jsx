@@ -137,6 +137,7 @@ const noticeTemplates = [
 ];
 
 const avatarTones = ['bg-blue-100', 'bg-green-100', 'bg-red-100', 'bg-purple-100', 'bg-amber-100', 'bg-pink-100'];
+const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const statusClasses = {
   open: 'bg-green-100 text-green-700',
@@ -158,6 +159,20 @@ function formatDate(value) {
 
 function getTodayDateValue() {
   return new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+function getMonthDays(monthDate) {
+  return Array.from(
+    { length: new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate() },
+    (_, index) => index + 1,
+  );
+}
+
+function formatDateValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function getLocationFilterValue({ area, building, detail }) {
@@ -411,6 +426,7 @@ export default function AdminPage() {
     setActiveFilter('all');
     setPostAdvancedFilters({ category: '', date: '', location: '' });
     setPostLocationFilter({ area: '', building: '', detail: '' });
+    setPostSortBy('newest');
     setOpenPostFilter('');
   }
 
@@ -1086,7 +1102,7 @@ function UserCard({ user, tone, onShowActivity, onToggleBlock, onSendNotice }) {
   );
 }
 
-function SearchField({ value, onChange, placeholder = 'Search admin posts...' }) {
+function SearchField({ value, onChange, placeholder = 'Search for items...' }) {
   return (
     <label className="flex h-12 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-slate-400">
       <IconSearchSmall />
@@ -1123,56 +1139,97 @@ function PostsPanel({
   onDelete,
   onReopen,
 }) {
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  });
   const currentLocationDetails = locationFilter.building ? getLocationDetails(locationFilter.building) : [];
+  const today = new Date();
+  const calendarMonthLabel = new Intl.DateTimeFormat('en', {
+    month: 'long',
+    year: 'numeric',
+  }).format(calendarMonth);
+  const calendarDays = getMonthDays(calendarMonth);
+  const firstWeekday = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1).getDay();
+  const nextMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
+  const isNextMonthInFuture = nextMonth > new Date(today.getFullYear(), today.getMonth(), 1);
+  const hasActiveFilters = Boolean(
+    keyword
+      || activeFilter !== 'all'
+      || advancedFilters.category
+      || advancedFilters.date
+      || advancedFilters.location
+      || sortBy !== 'newest',
+  );
+
+  function selectDate(day) {
+    const selectedDate = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day);
+    if (selectedDate > today) return;
+    onAdvancedFilterChange('date', formatDateValue(selectedDate));
+  }
 
   if (loading) {
     return <EmptyState label="Loading posts..." />;
   }
 
   return (
-    <section className="flex flex-col gap-4">
+    <section>
       <form onSubmit={(event) => event.preventDefault()}>
         <SearchField value={keyword} onChange={onKeywordChange} />
       </form>
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="mt-3 grid grid-cols-3 rounded-xl bg-slate-100 p-1 text-xs font-semibold">
         {[
-          { id: 'newest', label: 'Newest First', icon: <IconSortDown /> },
-          { id: 'oldest', label: 'Oldest First', icon: <IconSortUp /> },
-          { id: 'relevance', label: 'Relevance', icon: <IconSpark /> },
+          { id: 'newest', label: 'Newest' },
+          { id: 'oldest', label: 'Oldest' },
+          { id: 'relevance', label: 'Relevant' },
         ].map((option) => (
           <button
             key={option.id}
             type="button"
             onClick={() => onSortChange(option.id)}
-            className={`min-h-[76px] rounded-[14px] border px-2 py-2 text-[12px] font-semibold ${
+            className={`rounded-lg px-2 py-2 ${
               sortBy === option.id
-                ? 'border-blue-200 bg-blue-50 text-blue-600'
-                : 'border-slate-200 bg-slate-50 text-slate-600'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-slate-500'
             }`}
           >
-            <span className="mx-auto mb-1 flex h-5 w-5 items-center justify-center">{option.icon}</span>
             {option.label}
           </button>
         ))}
       </div>
 
-      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-        {filters.map((filter) => (
-          <button
-            type="button"
-            key={filter.id}
-            onClick={() => onFilterChange(filter.id)}
-            className={`shrink-0 rounded-full px-3 py-2 text-[12px] font-semibold ${
-              activeFilter === filter.id ? 'bg-[#155DFC] text-white' : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            {filter.label}
-          </button>
-        ))}
+      <div className="relative mt-3">
+        <div className="flex gap-2 overflow-x-auto pb-1 pr-5">
+          {filters.map((filter) => (
+            <button
+              type="button"
+              key={filter.id}
+              onClick={() => onFilterChange(filter.id)}
+              className={`shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 text-[11px] font-semibold leading-none ${
+                activeFilter === filter.id ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+        <div className="pointer-events-none absolute bottom-1 right-0 top-0 w-7 bg-gradient-to-l from-white to-white/0" />
       </div>
 
-      <div className="grid grid-cols-4 gap-2">
+      <div className="mt-2 flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Filters</span>
+        <button
+          type="button"
+          disabled={!hasActiveFilters}
+          onClick={onClearFilters}
+          className="px-1 py-1 text-xs font-semibold text-blue-600 disabled:text-slate-300"
+        >
+          Clear all
+        </button>
+      </div>
+
+      <div className="mt-1.5 grid grid-cols-3 gap-2">
         {[
           { id: 'category', label: advancedFilters.category || 'Category', icon: <IconTag /> },
           { id: 'date', label: advancedFilters.date || 'Date', icon: <IconCalendar /> },
@@ -1184,11 +1241,11 @@ function PostsPanel({
               key={filter.id}
               type="button"
               onClick={() => onOpenFilterChange(openFilter === filter.id ? '' : filter.id)}
-              className={`min-h-[62px] rounded-[14px] border px-2 py-2 text-[12px] font-semibold ${
+              className={`rounded-xl border px-2 py-2 text-xs font-semibold ${
                 openFilter === filter.id
                   ? 'border-blue-200 bg-blue-50 text-blue-600'
                   : selected
-                    ? 'border-blue-100 bg-blue-50 text-blue-700'
+                    ? 'border-blue-100 bg-blue-50 text-blue-700 shadow-sm'
                     : 'border-slate-200 bg-white text-slate-600'
               }`}
             >
@@ -1197,17 +1254,10 @@ function PostsPanel({
             </button>
           );
         })}
-        <button
-          type="button"
-          onClick={onClearFilters}
-          className="min-h-[62px] rounded-[14px] border border-slate-200 bg-white px-2 py-2 text-[12px] font-semibold text-slate-600"
-        >
-          Clear
-        </button>
       </div>
 
       {openFilter && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+        <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3">
           {openFilter === 'category' && (
             <select
               className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
@@ -1224,13 +1274,61 @@ function PostsPanel({
           )}
 
           {openFilter === 'date' && (
-            <input
-              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
-              type="date"
-              max={getTodayDateValue()}
-              value={advancedFilters.date}
-              onChange={(event) => onAdvancedFilterChange('date', event.target.value)}
-            />
+            <>
+              <div className="mb-3 flex items-center justify-between">
+                <button
+                  className="rounded-full p-1 text-slate-600"
+                  type="button"
+                  aria-label="Previous month"
+                  onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}
+                >
+                  <IconChevronLeft />
+                </button>
+                <h2 className="text-sm font-semibold text-slate-950">{calendarMonthLabel}</h2>
+                <button
+                  className="rounded-full p-1 text-slate-600 disabled:text-slate-300"
+                  type="button"
+                  aria-label="Next month"
+                  disabled={isNextMonthInFuture}
+                  onClick={() => setCalendarMonth(nextMonth)}
+                >
+                  <IconChevronRight />
+                </button>
+              </div>
+              <div className="grid grid-cols-7 gap-y-2 text-center">
+                {weekDays.map((day) => (
+                  <div key={day} className="text-[11px] font-medium text-slate-400">
+                    {day}
+                  </div>
+                ))}
+                {Array.from({ length: firstWeekday }).map((_, index) => (
+                  <div key={`blank-${index}`} />
+                ))}
+                {calendarDays.map((day) => {
+                  const date = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day);
+                  const isFuture = date > today;
+                  const isSelected = advancedFilters.date === formatDateValue(date);
+
+                  return (
+                    <button
+                      key={day}
+                      className={`mx-auto flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold disabled:cursor-not-allowed ${
+                        isSelected
+                          ? 'bg-blue-600 text-white'
+                          : isFuture
+                            ? 'text-slate-300'
+                            : 'text-slate-700'
+                      }`}
+                      type="button"
+                      disabled={isFuture}
+                      onClick={() => selectDate(day)}
+                    >
+                      {day}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
 
           {openFilter === 'location' && (
@@ -1282,7 +1380,7 @@ function PostsPanel({
         </div>
       )}
 
-      <div className="border-t border-slate-100 pt-4">
+      <div className="mt-5 border-t border-slate-100 pt-4">
         <p className="text-[14px] font-medium text-slate-500">
           {posts.length} result{posts.length === 1 ? '' : 's'}
         </p>
@@ -1807,6 +1905,22 @@ function IconSpark() {
     <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
       <path d="m19 15 .9 2.6L22 18.5l-2.1.9L19 22l-.9-2.6-2.1-.9 2.1-.9z" />
+    </svg>
+  );
+}
+
+function IconChevronLeft() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m15 18-6-6 6-6" />
+    </svg>
+  );
+}
+
+function IconChevronRight() {
+  return (
+    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m9 18 6-6-6-6" />
     </svg>
   );
 }
