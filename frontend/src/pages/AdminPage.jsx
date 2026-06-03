@@ -1868,39 +1868,6 @@ function IconLogout() {
   );
 }
 
-function IconSortDown() {
-  return (
-    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M11 5v12" />
-      <path d="m7 13 4 4 4-4" />
-      <path d="M17 7h4" />
-      <path d="M17 12h3" />
-      <path d="M17 17h2" />
-    </svg>
-  );
-}
-
-function IconSortUp() {
-  return (
-    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M11 19V7" />
-      <path d="m7 11 4-4 4 4" />
-      <path d="M17 7h2" />
-      <path d="M17 12h3" />
-      <path d="M17 17h4" />
-    </svg>
-  );
-}
-
-function IconSpark() {
-  return (
-    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
-      <path d="m19 15 .9 2.6L22 18.5l-2.1.9L19 22l-.9-2.6-2.1-.9 2.1-.9z" />
-    </svg>
-  );
-}
-
 function IconChevronLeft() {
   return (
     <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
