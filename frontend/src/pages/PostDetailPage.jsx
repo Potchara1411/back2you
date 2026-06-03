@@ -1,16 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CalendarIcon, ChevronLeftIcon, LocationIcon, PlusIcon, TagIcon } from '../components/Icons';
+import LocationPicker from '../components/LocationPicker';
 import MobileLayout from '../components/MobileLayout';
 import { useAuth } from '../context/AuthContext';
 import { getMockPost } from '../data/mockPosts';
 import {
-  buildingsByArea,
-  composeLocation,
   DEFAULT_CATEGORY_OPTIONS,
-  findAreaForBuilding,
-  getLocationDetails,
-  parseLocationParts,
   toCategoryOptions,
 } from '../data/postOptions';
 import api from '../services/api';
@@ -155,87 +151,6 @@ function FieldShell({ icon: FieldIcon, label, children }) {
   );
 }
 
-function LocationSelector({ label, location, onChange }) {
-  const initialLocation = useMemo(() => parseLocationParts(location), [location]);
-  const [area, setArea] = useState(initialLocation.area);
-  const [building, setBuilding] = useState(initialLocation.building);
-  const [locationDetail, setLocationDetail] = useState(initialLocation.detail);
-  const [isOpen, setIsOpen] = useState(false);
-  const locationDetailOptions = useMemo(() => getLocationDetails(building), [building]);
-
-  function applyLocation(nextArea, nextBuilding, nextLocationDetail) {
-    onChange(composeLocation(nextArea, nextBuilding, nextLocationDetail));
-  }
-
-  function handleBuildingChange(value) {
-    const nextArea = findAreaForBuilding(value);
-    setArea(nextArea);
-    setBuilding(value);
-    setLocationDetail('');
-    applyLocation(nextArea, value, '');
-  }
-
-  function handleLocationDetailChange(value) {
-    setLocationDetail(value);
-    applyLocation(area, building, value);
-  }
-
-  return (
-    <FieldShell label={label} icon={LocationIcon}>
-      <div>
-        <button
-          className={`flex min-h-[52px] w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-base outline-none transition ${
-            isOpen || location
-              ? 'border-blue-200 bg-blue-50 text-blue-700'
-              : 'border-slate-200 bg-white text-slate-500'
-          }`}
-          type="button"
-          onClick={() => setIsOpen((current) => !current)}
-        >
-          <span className="min-w-0 flex-1 truncate">
-            {location || 'Choose campus location'}
-          </span>
-          <span className="shrink-0 text-xs font-semibold text-blue-600">
-            {isOpen ? 'Close' : 'Detail'}
-          </span>
-        </button>
-
-        {isOpen && (
-          <div className="mt-3 space-y-2 rounded-2xl border border-slate-200 bg-white p-3">
-            <select
-              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
-              value={building}
-              onChange={(event) => handleBuildingChange(event.target.value)}
-            >
-              <option value="">Choose KAIST building</option>
-              {Object.entries(buildingsByArea).map(([areaName, buildingNames]) => (
-                <optgroup key={areaName} label={areaName}>
-                  {buildingNames.map((buildingName) => (
-                    <option key={buildingName} value={buildingName}>{buildingName}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-
-            {building && (
-              <select
-                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
-                value={locationDetail}
-                onChange={(event) => handleLocationDetailChange(event.target.value)}
-              >
-                <option value="">Any floor / entrance</option>
-                {locationDetailOptions.map((detail) => (
-                  <option key={detail} value={detail}>{detail}</option>
-                ))}
-              </select>
-            )}
-          </div>
-        )}
-      </div>
-    </FieldShell>
-  );
-}
-
 function EditForm({ categories, form, error, onCancel, onChange, onImageChange, onImageRemove, onSubmit }) {
   return (
     <MobileLayout showHeader={false}>
@@ -257,7 +172,7 @@ function EditForm({ categories, form, error, onCancel, onChange, onImageChange, 
           </div>
         </header>
 
-        <section className="space-y-5 px-5 pb-28 pt-5">
+        <section className="space-y-5 px-5 pb-6 pt-5">
           <div className="grid grid-cols-2 rounded-2xl bg-slate-100 p-1">
             {['lost', 'found'].map((type) => (
               <button
@@ -304,11 +219,12 @@ function EditForm({ categories, form, error, onCancel, onChange, onImageChange, 
             </select>
           </FieldShell>
 
-          <LocationSelector
-            label={form.type === 'lost' ? 'Lost location' : 'Found location'}
-            location={form.location}
-            onChange={(value) => onChange('location', value)}
-          />
+          <FieldShell label={form.type === 'lost' ? 'Lost location' : 'Found location'} icon={LocationIcon}>
+            <LocationPicker
+              location={form.location}
+              onChange={(value) => onChange('location', value)}
+            />
+          </FieldShell>
 
           <FieldShell label={form.type === 'lost' ? 'Lost date' : 'Found date'} icon={CalendarIcon}>
             <input
@@ -364,8 +280,8 @@ function EditForm({ categories, form, error, onCancel, onChange, onImageChange, 
           {error && <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600">{error}</p>}
         </section>
 
-        <div className="sticky bottom-0 z-20 mt-auto border-t border-slate-100 bg-white px-5 pb-6 pt-4">
-          <button className="h-14 w-full rounded-2xl bg-blue-600 text-base font-bold text-white" type="submit">
+        <div className="mt-auto border-t border-slate-200 bg-slate-50 px-5 py-5">
+          <button className="h-14 w-full rounded-xl bg-blue-600 text-base font-bold text-white" type="submit">
             Save Changes
           </button>
         </div>
