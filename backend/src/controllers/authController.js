@@ -17,10 +17,6 @@ async function requestOtp(req, res) {
     return res.status(400).json({ error: 'Must use a @kaist.ac.kr email' });
   }
 
-  if (useMockAuth()) {
-    return res.json({ message: 'OTP sent', devOtp: MOCK_OTP });
-  }
-
   try {
     const otp = crypto.randomInt(100000, 999999).toString();
     const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
