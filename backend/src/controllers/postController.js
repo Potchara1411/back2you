@@ -193,26 +193,28 @@ function parseClaimBody(body) {
   return { message, foundLocation, foundDate, proofImages };
 }
 
-function validateClaimInput(input, res) {
+function validateClaimInput(input, post, res) {
+  const claimDateLabel = post?.type === 'lost' ? 'Found date' : 'Lost date';
+
   if (!input.message) {
     res.status(400).json({ error: 'Claim message is required' });
     return false;
   }
-  if (!input.foundLocation) {
+  if (post?.type === 'lost' && !input.foundLocation) {
     res.status(400).json({ error: 'Found location is required' });
     return false;
   }
   if (!input.foundDate) {
-    res.status(400).json({ error: 'Found date and time are required' });
+    res.status(400).json({ error: `${claimDateLabel} is required` });
     return false;
   }
   const foundAt = new Date(input.foundDate);
   if (Number.isNaN(foundAt.getTime())) {
-    res.status(400).json({ error: 'Found date is invalid' });
+    res.status(400).json({ error: `${claimDateLabel} is invalid` });
     return false;
   }
   if (foundAt > new Date()) {
-    res.status(400).json({ error: 'Found date cannot be in the future' });
+    res.status(400).json({ error: `${claimDateLabel} cannot be in the future` });
     return false;
   }
   return true;
@@ -442,11 +444,6 @@ async function editPost(req, res) {
 
     const input = parsePostBody(req.body);
     if (!validatePostInput(input, res)) return;
-    const existingImages = Array.isArray(post.images) ? post.images.filter(Boolean) : [];
-
-    if (input.images.length > existingImages.length) {
-      return res.status(400).json({ error: 'You can replace existing photos, but cannot add more photos while editing' });
-    }
 
     const { rows } = await pool.query(
       `UPDATE posts
@@ -515,7 +512,6 @@ async function createClaimRequest(req, res) {
   try {
     await ensureClaimRequestsTable();
     const input = parseClaimBody(req.body);
-    if (!validateClaimInput(input, res)) return;
 
     await client.query('BEGIN');
     const { rows } = await client.query('SELECT * FROM posts WHERE id = $1 FOR UPDATE', [req.params.id]);
@@ -536,6 +532,10 @@ async function createClaimRequest(req, res) {
     if (!CLAIMABLE_STATUSES.has(post.status)) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'This post is not accepting new claims right now' });
+    }
+    if (!validateClaimInput(input, post, res)) {
+      await client.query('ROLLBACK');
+      return;
     }
 
     const duplicate = await client.query(
