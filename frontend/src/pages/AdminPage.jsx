@@ -843,7 +843,7 @@ function AppHeader({ onRefresh, onLogout }) {
         <img
           alt="KAIST"
           className="h-8 w-24 shrink-0 object-contain"
-          src="/kaist-logo.svg"
+          src="/kaist-logo.jpeg"
         />
         <h1 className="truncate text-[18px] font-medium leading-7 tracking-normal text-[#101828]">
           Admin Console
