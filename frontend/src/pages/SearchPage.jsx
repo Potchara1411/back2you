@@ -517,8 +517,18 @@ export default function SearchPage() {
         <div className="mt-4 border-t border-slate-100 pt-4">
           {isLoading ? (
             <div className="space-y-5">
-              {Array.from({ length: 2 }).map((_, index) => (
-                <div key={index} className="h-80 animate-pulse rounded-2xl bg-slate-100" />
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="animate-pulse overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+                  <div className="h-48 bg-slate-100" />
+                  <div className="space-y-3 p-5">
+                    <div className="flex gap-3">
+                      <div className="h-5 flex-1 rounded-full bg-slate-100" />
+                      <div className="h-5 w-16 rounded-full bg-slate-100" />
+                    </div>
+                    <div className="h-4 w-2/3 rounded-full bg-slate-100" />
+                    <div className="h-4 w-1/2 rounded-full bg-slate-100" />
+                  </div>
+                </div>
               ))}
             </div>
           ) : visiblePosts.length === 0 ? (

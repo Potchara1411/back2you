@@ -10,6 +10,7 @@ import {
   toCategoryOptions,
 } from '../data/postOptions';
 import api from '../services/api';
+import { uploadImage } from '../services/cloudinary';
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
@@ -38,15 +39,6 @@ const statusStyles = {
   pending_resolution: 'bg-blue-100 text-blue-700',
   resolved: 'bg-emerald-100 text-emerald-700',
 };
-
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
 
 function formatDate(value) {
   if (!value) return 'Not specified';
@@ -393,10 +385,14 @@ export default function PostDetailPage() {
     }
 
     setError('');
-    const image = await readFileAsDataUrl(file);
-    const nextImages = [...(form.images || [])];
-    nextImages[index] = image;
-    updateField('images', nextImages);
+    try {
+      const image = await uploadImage(file);
+      const nextImages = [...(form.images || [])];
+      nextImages[index] = image;
+      updateField('images', nextImages);
+    } catch (uploadError) {
+      setError(uploadError.message || 'Image upload failed.');
+    }
     event.target.value = '';
   }
 
@@ -472,8 +468,12 @@ export default function PostDetailPage() {
     }
 
     setError('');
-    const image = await readFileAsDataUrl(file);
-    setClaimForm((current) => ({ ...current, proof_images: [image] }));
+    try {
+      const image = await uploadImage(file);
+      setClaimForm((current) => ({ ...current, proof_images: [image] }));
+    } catch (uploadError) {
+      setError(uploadError.message || 'Image upload failed.');
+    }
     event.target.value = '';
   }
 

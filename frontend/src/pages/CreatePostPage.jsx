@@ -8,6 +8,7 @@ import {
   toCategoryOptions,
 } from '../data/postOptions';
 import api from '../services/api';
+import { uploadImage } from '../services/cloudinary';
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
@@ -22,13 +23,31 @@ const initialForm = {
   date_occurred: '',
 };
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+function getFloorLabel(floor) {
+  if (floor === 1) return '1st floor';
+  if (floor === 2) return '2nd floor';
+  if (floor === 3) return '3rd floor';
+  return `${floor}th floor`;
+}
+
+function guessFloorCount(buildingName) {
+  if (/Outdoor|Stadium|Plant|Storehouse|Tunnel/i.test(buildingName)) return 1;
+  if (/Hall|Accommodation|Village|Apartment|Housing/i.test(buildingName)) return 10;
+  if (/Center|Complex|Library|Student Center|Clinic|Administration/i.test(buildingName)) return 5;
+  if (/Dept\.|School|Engineering|Science|Research|Institute|Building|B\/D/i.test(buildingName)) return 7;
+  return 4;
+}
+
+function getLocationDetails(buildingName) {
+  if (!buildingName) return [];
+  return [
+    'Near entrance',
+    ...Array.from({ length: guessFloorCount(buildingName) }, (_, index) => getFloorLabel(index + 1)),
+  ];
+}
+
+function findAreaForBuilding(buildingName) {
+  return Object.entries(buildingsByArea).find(([, buildingNames]) => buildingNames.includes(buildingName))?.[0] || '';
 }
 
 function FieldShell({ icon: FieldIcon, label, children }) {
@@ -78,12 +97,16 @@ export default function CreatePostPage() {
     }
 
     setError('');
-    const dataUrl = await readFileAsDataUrl(file);
-    setImages((current) => {
-      const next = [...current];
-      next[index] = dataUrl;
-      return next;
-    });
+    try {
+      const url = await uploadImage(file);
+      setImages((current) => {
+        const next = [...current];
+        next[index] = url;
+        return next;
+      });
+    } catch (uploadError) {
+      setError(uploadError.message || 'Image upload failed.');
+    }
     event.target.value = '';
   }
 
