@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import MobileLayout from '../components/MobileLayout';
+import { RefreshIcon } from '../components/Icons';
 import api from '../services/api';
 
 const STATUS_LABEL = {
@@ -22,23 +23,31 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    setError('');
+    try {
+      const [profileRes, postsRes] = await Promise.all([
+        api.get('/users/me'),
+        api.get('/users/me/posts'),
+      ]);
+      setProfile(profileRes.data);
+      setPosts(postsRes.data);
+      return profileRes.data;
+    } catch {
+      setError('Failed to load profile. Please refresh.');
+    } finally {
+      if (isRefresh) setRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const [profileRes, postsRes] = await Promise.all([
-          api.get('/users/me'),
-          api.get('/users/me/posts'),
-        ]);
-        setProfile(profileRes.data);
-        setEditName(profileRes.data.name || '');
-        setPosts(postsRes.data);
-      } catch {
-        setError('Failed to load profile. Please refresh.');
-      }
-    }
-    load();
-  }, []);
+    load().then((data) => {
+      if (data) setEditName(data.name || '');
+    });
+  }, [load]);
 
   async function handleSave(e) {
     e.preventDefault();
@@ -67,8 +76,18 @@ export default function ProfilePage() {
   if (!profile) {
     return (
       <MobileLayout showHeader={false}>
-        <div className="flex h-full items-center justify-center text-slate-400">
-          {error || 'Loading...'}
+        <div className="flex h-full flex-col items-center justify-center gap-3 text-slate-400">
+          <p>{error || 'Loading...'}</p>
+          {error && (
+            <button
+              onClick={() => load(true)}
+              disabled={refreshing}
+              className="flex items-center gap-2 rounded-xl bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-100 disabled:opacity-50"
+            >
+              <RefreshIcon className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Retry
+            </button>
+          )}
         </div>
       </MobileLayout>
     );
@@ -79,15 +98,25 @@ export default function ProfilePage() {
       <div className="px-5 pb-6 pt-6">
         <div className="mb-5 flex items-center justify-between">
           <h1 className="text-2xl font-bold text-slate-950">My Profile</h1>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-100"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
-            </svg>
-            Logout
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => load(true)}
+              disabled={refreshing}
+              aria-label="Refresh profile"
+              className="rounded-full p-1.5 text-slate-400 hover:text-slate-600 disabled:opacity-50"
+            >
+              <RefreshIcon className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-100"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+              </svg>
+              Logout
+            </button>
+          </div>
         </div>
 
         <div className="mb-5 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
