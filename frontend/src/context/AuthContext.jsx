@@ -1,5 +1,5 @@
-/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState } from 'react';
+import api from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -24,7 +24,12 @@ export function AuthProvider({ children }) {
     setUser(userData);
   }
 
-  function logout() {
+  async function logout() {
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      // proceed with local logout even if the server call fails
+    }
     localStorage.removeItem('token');
     setToken(null);
     setUser(null);
@@ -37,6 +42,7 @@ export function AuthProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   return useContext(AuthContext);
 }

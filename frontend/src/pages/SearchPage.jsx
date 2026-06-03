@@ -6,10 +6,8 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   LocationIcon,
+  RefreshIcon,
   SearchIcon,
-  SortDownIcon,
-  SortUpIcon,
-  SparkIcon,
   TagIcon,
 } from '../components/Icons';
 import { getMockList, searchMockPosts } from '../data/mockPosts';
@@ -30,21 +28,8 @@ const postFilters = [
   { label: 'Claimed', params: { status: 'claimed' } },
   { label: 'Resolved', params: { status: 'resolved' } },
 ];
-const categories = [
-  'Electronics',
-  'Bags & Backpacks',
-  'Clothing',
-  'Keys',
-  'Wallets & Cards',
-  'Stationery & Books',
-  'Glasses & Eyewear',
-  'Accessories',
-  'Sports & Gym',
-  'Umbrellas',
-  'Documents',
-  'Others',
-];
-const buildingsByArea = {
+const DEFAULT_CATEGORIES = ['Electronics', 'Clothing', 'Books', 'Accessories', 'Keys', 'Wallet', 'ID Card', 'Other'];
+export const buildingsByArea = {
   North: [
     'N1 IT Convergence Building',
     'N2 Branch Administration B/D',
@@ -162,7 +147,7 @@ function guessFloorCount(buildingName) {
   return 4;
 }
 
-function getLocationDetails(buildingName) {
+export function getLocationDetails(buildingName) {
   return [
     'Near entrance',
     ...Array.from({ length: guessFloorCount(buildingName) }, (_, index) => getFloorLabel(index + 1)),
@@ -253,17 +238,16 @@ function SearchResultCard({ post, viewMode }) {
   }
 
   const image = post.images?.[0];
-  const ownerLabel = post.type === 'found' ? 'Finder' : 'Owner';
   const statusLabel = getStatusLabel(post);
   const statusClass = getStatusClass(post);
 
   if (viewMode === 'list') {
     return (
-      <a className="block rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm" href={`/post/${post.id}`}>
+      <a className="block rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm" href={`/posts/${post.id}`}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="truncate text-base font-bold text-slate-950">{post.title}</h2>
-            <p className="mt-1 truncate text-xs text-slate-500">{post.category} · {ownerLabel}</p>
+            <p className="mt-1 truncate text-xs text-slate-500">{post.category}</p>
             <p className="mt-1 truncate text-xs text-slate-500">{post.location}</p>
           </div>
           <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold capitalize ${statusClass}`}>
@@ -275,7 +259,7 @@ function SearchResultCard({ post, viewMode }) {
   }
 
   return (
-    <a className="flex gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" href={`/post/${post.id}`}>
+    <a className="flex gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" href={`/posts/${post.id}`}>
       <div className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-slate-100">
         {image && <img alt={post.title} className="h-full w-full object-cover" src={image} />}
       </div>
@@ -286,7 +270,7 @@ function SearchResultCard({ post, viewMode }) {
             {statusLabel}
           </span>
         </div>
-        <p className="truncate text-xs font-medium text-slate-500">{post.category} · {ownerLabel}</p>
+        <p className="truncate text-xs font-medium text-slate-500">{post.category}</p>
         <p className="mt-1 line-clamp-2 text-xs text-slate-500">{post.location}</p>
         <p className="mt-1 text-xs text-slate-400">
           {getDateLabel(post)} {formatResultDate(post.date_occurred || post.created_at)}
@@ -318,6 +302,13 @@ export default function SearchPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+
+  useEffect(() => {
+    api.get('/posts/categories')
+      .then(({ data }) => setCategories(data.map(c => c.name)))
+      .catch(() => {});
+  }, []);
 
   const visiblePosts = useMemo(() => {
     if (sortBy === 'oldest') {
@@ -341,6 +332,16 @@ export default function SearchPage() {
   const nextMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
   const isNextMonthInFuture = nextMonth > new Date(today.getFullYear(), today.getMonth(), 1);
   const currentLocationDetails = building ? getLocationDetails(building) : [];
+  const hasActiveFilters = Boolean(
+    filters.keyword
+      || filters.category
+      || filters.location
+      || filters.date
+      || filters.type
+      || filters.status
+      || filters.scope !== 'unsolved'
+      || sortBy !== 'newest',
+  );
 
   async function runSearch(page = 1, nextFilters = filters) {
     const setLoading = page === 1 ? setIsLoading : setIsLoadingMore;
@@ -479,48 +480,62 @@ export default function SearchPage() {
           <SearchField value={filters.keyword} onChange={updateKeyword} />
         </form>
 
-        <div className="mt-4 grid grid-cols-3 gap-2">
+        <div className="mt-3 grid grid-cols-3 rounded-xl bg-slate-100 p-1 text-xs font-semibold">
           {[
-            { key: 'newest', label: 'Newest First', icon: SortDownIcon },
-            { key: 'oldest', label: 'Oldest First', icon: SortUpIcon },
-            { key: 'relevance', label: 'Relevance', icon: SparkIcon },
-          ].map(({ key, label, icon: SortIcon }) => (
+            { key: 'newest', label: 'Newest' },
+            { key: 'oldest', label: 'Oldest' },
+            { key: 'relevance', label: 'Relevant' },
+          ].map(({ key, label }) => (
             <button
               key={key}
-              className={`rounded-xl border px-2 py-2 text-xs font-medium ${
+              className={`rounded-lg px-2 py-2 ${
                 sortBy === key
-                  ? 'border-blue-200 bg-blue-50 text-blue-600'
-                  : 'border-slate-200 bg-slate-50 text-slate-600'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-slate-500'
               }`}
               type="button"
               onClick={() => setSortBy(key)}
             >
-              <SortIcon className="mx-auto mb-1 h-4 w-4" />
               {label}
             </button>
           ))}
         </div>
 
-        <div className="mt-3 grid grid-cols-5 gap-1.5">
-          {postFilters.map((filter) => (
-            <button
-              key={filter.label}
-              className={`rounded-full px-1.5 py-2 text-[11px] font-semibold ${
-                filters.type === (filter.params.type || '')
-                  && filters.status === (filter.params.status || '')
-                  && filters.scope === (filter.params.scope || '')
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 text-slate-600'
-              }`}
-              type="button"
-              onClick={() => selectPostFilter(filter)}
-            >
-              {filter.label}
-            </button>
-          ))}
+        <div className="relative mt-3">
+          <div className="flex gap-2 overflow-x-auto pb-1 pr-5">
+            {postFilters.map((filter) => (
+              <button
+                key={filter.label}
+                className={`shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 text-[11px] font-semibold leading-none ${
+                  filters.type === (filter.params.type || '')
+                    && filters.status === (filter.params.status || '')
+                    && filters.scope === (filter.params.scope || '')
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-100 text-slate-600'
+                }`}
+                type="button"
+                onClick={() => selectPostFilter(filter)}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+          <div className="pointer-events-none absolute bottom-1 right-0 top-0 w-7 bg-gradient-to-l from-white to-white/0" />
         </div>
 
-        <div className="mt-3 grid grid-cols-4 gap-2">
+        <div className="mt-2 flex items-center justify-between">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Filters</span>
+          <button
+            className="px-1 py-1 text-xs font-semibold text-blue-600 disabled:text-slate-300"
+            type="button"
+            disabled={!hasActiveFilters}
+            onClick={clearFilters}
+          >
+            Clear all
+          </button>
+        </div>
+
+        <div className="mt-1.5 grid grid-cols-3 gap-2">
           {[
             { key: 'category', label: filters.category || 'Category', icon: TagIcon, selected: Boolean(filters.category) },
             { key: 'date', label: filters.date || 'Date', icon: CalendarIcon, selected: Boolean(filters.date) },
@@ -542,13 +557,6 @@ export default function SearchPage() {
               <span className="block truncate">{label}</span>
             </button>
           ))}
-          <button
-            className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-600"
-            type="button"
-            onClick={clearFilters}
-          >
-            Clear
-          </button>
         </div>
 
         {openFilter && (
@@ -687,7 +695,7 @@ export default function SearchPage() {
           </div>
         )}
 
-        <div className="mt-5 border-t border-slate-100 pt-4">
+        <div className="mt-4 border-t border-slate-100 pt-4">
           {isLoading ? (
             <div className="space-y-5">
               {Array.from({ length: 2 }).map((_, index) => (
@@ -705,23 +713,34 @@ export default function SearchPage() {
                 <span className="text-sm font-medium text-slate-500">
                   {pagination.total} result{pagination.total === 1 ? '' : 's'}
                 </span>
-                <div className="grid grid-cols-3 rounded-xl bg-slate-100 p-1 text-xs font-semibold">
-                  {[
-                    { key: 'large', label: 'Large' },
-                    { key: 'compact', label: 'Compact' },
-                    { key: 'list', label: 'List' },
-                  ].map(({ key, label }) => (
-                    <button
-                      key={key}
-                      className={`rounded-lg px-2 py-1.5 ${
-                        viewMode === key ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'
-                      }`}
-                      type="button"
-                      onClick={() => setViewMode(key)}
-                    >
-                      {label}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-3 rounded-xl bg-slate-100 p-1 text-xs font-semibold">
+                    {[
+                      { key: 'large', label: 'Large' },
+                      { key: 'compact', label: 'Compact' },
+                      { key: 'list', label: 'List' },
+                    ].map(({ key, label }) => (
+                      <button
+                        key={key}
+                        className={`rounded-lg px-2 py-1.5 ${
+                          viewMode === key ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'
+                        }`}
+                        type="button"
+                        onClick={() => setViewMode(key)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    className="rounded-full p-1.5 text-slate-400 disabled:opacity-50"
+                    type="button"
+                    aria-label="Refresh search results"
+                    disabled={isLoading || isLoadingMore}
+                    onClick={() => runSearch(1, filters)}
+                  >
+                    <RefreshIcon className="h-5 w-5" />
+                  </button>
                 </div>
               </div>
               <div className={viewMode === 'large' ? 'space-y-6' : 'space-y-3'}>

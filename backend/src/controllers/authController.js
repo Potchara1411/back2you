@@ -4,6 +4,11 @@ const pool = require('../models/db');
 const transporter = require('../utils/mailer');
 
 const OTP_EXPIRY_MINUTES = 10;
+const MOCK_OTP = '123456';
+
+function useMockAuth() {
+  return process.env.MOCK_AUTH !== 'false' || process.env.USE_MOCK_DATA === 'true';
+}
 
 async function requestOtp(req, res) {
   const { email } = req.body;
@@ -115,34 +120,63 @@ async function verifyOtp(req, res) {
     return res.status(400).json({ error: 'Email and OTP are required' });
   }
 
-  const { rows } = await pool.query(
-    'SELECT * FROM users WHERE email = $1',
-    [email]
-  );
-  const user = rows[0];
+  if (useMockAuth()) {
+    if (otp !== MOCK_OTP) {
+      return res.status(401).json({ error: 'Invalid OTP' });
+    }
 
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  if (user.is_blocked) return res.status(403).json({ error: 'Account is blocked' });
-  if (user.otp_code !== otp) return res.status(401).json({ error: 'Invalid OTP' });
-  if (new Date() > new Date(user.otp_expires_at)) {
-    return res.status(401).json({ error: 'OTP has expired' });
+    const role = email.startsWith('admin') ? 'admin' : 'user';
+    const { rows } = await pool.query(
+      `INSERT INTO users (email, name, role)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (email) DO UPDATE
+         SET name = COALESCE(users.name, EXCLUDED.name),
+             role = users.role
+       RETURNING id, email, name, role`,
+      [email, email.split('@')[0], role],
+    );
+    const user = rows[0];
+    const { name, ...tokenPayload } = user;
+    const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+    return res.json({ token, user });
   }
 
-  await pool.query(
-    'UPDATE users SET otp_code = NULL, otp_expires_at = NULL WHERE id = $1',
-    [user.id]
-  );
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM users WHERE email = $1',
+      [email]
+    );
+    const user = rows[0];
 
-  const token = jwt.sign(
-    { id: user.id, email: user.email, role: user.role },
-    process.env.JWT_SECRET,
-    { expiresIn: '7d' }
-  );
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.is_blocked) return res.status(403).json({ error: 'Account is blocked' });
+    if (user.otp_code !== otp) return res.status(401).json({ error: 'Invalid OTP' });
+    if (new Date() > new Date(user.otp_expires_at)) {
+      return res.status(401).json({ error: 'OTP has expired' });
+    }
 
-  res.json({
-    token,
-    user: { id: user.id, email: user.email, name: user.name, role: user.role },
-  });
+    const defaultName = user.name || email.split('@')[0];
+
+    await pool.query(
+      'UPDATE users SET otp_code = NULL, otp_expires_at = NULL, name = COALESCE(name, $2) WHERE id = $1',
+      [user.id, defaultName]
+    );
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      token,
+      user: { id: user.id, email: user.email, name: defaultName, role: user.role },
+    });
+  } catch (err) {
+    console.error('verifyOtp error:', err);
+    res.status(500).json({ error: 'Verification failed. Please try again.' });
+  }
 }
 
 async function logout(req, res) {
