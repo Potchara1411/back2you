@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarIcon, ChevronLeftIcon, LocationIcon, PlusIcon, TagIcon } from '../components/Icons';
+import LocationPicker from '../components/LocationPicker';
 import MobileLayout from '../components/MobileLayout';
 import {
-  buildingsByArea,
-  composeLocation,
   DEFAULT_CATEGORY_OPTIONS,
-  findAreaForBuilding,
-  getLocationDetails,
   toCategoryOptions,
 } from '../data/postOptions';
 import api from '../services/api';
@@ -50,10 +47,6 @@ export default function CreatePostPage() {
   const [form, setForm] = useState(initialForm);
   const [images, setImages] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORY_OPTIONS);
-  const [area, setArea] = useState('');
-  const [building, setBuilding] = useState('');
-  const [locationDetail, setLocationDetail] = useState('');
-  const [isLocationOpen, setIsLocationOpen] = useState(false);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
@@ -69,27 +62,9 @@ export default function CreatePostPage() {
     [categories, form.category_id],
   );
   const selectedImages = useMemo(() => images.filter(Boolean), [images]);
-  const locationDetailOptions = useMemo(() => getLocationDetails(building), [building]);
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
-  }
-
-  function applyLocation(nextArea, nextBuilding, nextLocationDetail) {
-    setForm((current) => ({ ...current, location: composeLocation(nextArea, nextBuilding, nextLocationDetail) }));
-  }
-
-  function handleBuildingChange(value) {
-    const nextArea = findAreaForBuilding(value);
-    setArea(nextArea);
-    setBuilding(value);
-    setLocationDetail('');
-    applyLocation(nextArea, value, '');
-  }
-
-  function handleLocationDetailChange(value) {
-    setLocationDetail(value);
-    applyLocation(area, building, value);
   }
 
   async function handleImages(event, index) {
@@ -165,7 +140,7 @@ export default function CreatePostPage() {
           </div>
         </header>
 
-        <section className="space-y-6 px-5 pb-28 pt-5">
+        <section className="space-y-6 px-5 pb-6 pt-5">
           <div className="grid grid-cols-2 rounded-2xl bg-slate-100 p-1">
             {['lost', 'found'].map((type) => (
               <button
@@ -252,56 +227,10 @@ export default function CreatePostPage() {
           </FieldShell>
 
           <FieldShell label={form.type === 'lost' ? 'Lost location' : 'Found location'} icon={LocationIcon}>
-            <div>
-              <button
-                className={`flex min-h-[52px] w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-base outline-none transition ${
-                  isLocationOpen || form.location
-                    ? 'border-blue-200 bg-blue-50 text-blue-700'
-                    : 'border-slate-200 bg-white text-slate-500'
-                }`}
-                type="button"
-                onClick={() => setIsLocationOpen((current) => !current)}
-              >
-                <span className="min-w-0 flex-1 truncate">
-                  {form.location || 'Choose campus location'}
-                </span>
-                <span className="shrink-0 text-xs font-semibold text-blue-600">
-                  {isLocationOpen ? 'Close' : 'Detail'}
-                </span>
-              </button>
-
-              {isLocationOpen && (
-                <div className="mt-3 space-y-2 rounded-2xl border border-slate-200 bg-white p-3">
-                  <select
-                    className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
-                    value={building}
-                    onChange={(event) => handleBuildingChange(event.target.value)}
-                  >
-                    <option value="">Choose KAIST building</option>
-                    {Object.entries(buildingsByArea).map(([areaName, buildingNames]) => (
-                      <optgroup key={areaName} label={areaName}>
-                        {buildingNames.map((buildingName) => (
-                          <option key={buildingName} value={buildingName}>{buildingName}</option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-
-                  {building && (
-                    <select
-                      className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
-                      value={locationDetail}
-                      onChange={(event) => handleLocationDetailChange(event.target.value)}
-                    >
-                      <option value="">Any floor / entrance</option>
-                      {locationDetailOptions.map((detail) => (
-                        <option key={detail} value={detail}>{detail}</option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              )}
-            </div>
+            <LocationPicker
+              location={form.location}
+              onChange={(value) => updateField('location', value)}
+            />
           </FieldShell>
 
           <FieldShell label={form.type === 'lost' ? 'Lost date' : 'Found date'} icon={CalendarIcon}>
@@ -331,9 +260,9 @@ export default function CreatePostPage() {
           )}
         </section>
 
-        <div className="sticky bottom-0 z-20 mt-auto border-t border-slate-100 bg-white px-5 pb-6 pt-4">
+        <div className="mt-auto border-t border-slate-200 bg-slate-50 px-5 py-5">
           <button
-            className="h-14 w-full rounded-2xl bg-blue-600 text-base font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-14 w-full rounded-xl bg-blue-600 text-base font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isSubmitting}
             type="submit"
           >
