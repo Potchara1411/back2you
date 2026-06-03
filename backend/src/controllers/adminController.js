@@ -307,29 +307,91 @@ async function reopenPostByAdmin(req, res) {
 }
 
 async function resolvePostByAdmin(req, res) {
+  const body = req.body || {};
+  const selectedClaimId = Number.parseInt(body.claimId || body.claim_id, 10);
+
+  if (!Number.isInteger(selectedClaimId) || selectedClaimId <= 0) {
+    return res.status(400).json({ error: 'Select one accepted claim to resolve.' });
+  }
+
+  const client = await pool.connect();
+  let transactionOpen = false;
+
   try {
-    const { rows } = await pool.query(
+    await client.query('BEGIN');
+    transactionOpen = true;
+
+    const postResult = await client.query(
       `
-        UPDATE posts p
-        SET status = 'resolved',
-            updated_at = NOW()
-        FROM users u
+        SELECT p.id, p.title, p.status, u.email AS owner_email
+        FROM posts p
+        JOIN users u ON u.id = p.user_id
         WHERE p.id = $1
           AND p.status = 'pending_resolution'
-          AND u.id = p.user_id
-        RETURNING p.id, p.title, p.status, p.updated_at, u.email AS owner_email
+        FOR UPDATE OF p
       `,
       [req.params.id],
     );
 
-    if (!rows.length) {
+    if (!postResult.rows.length) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
       return res.status(404).json({ error: 'Pending resolution post not found.' });
     }
+
+    const claimResult = await client.query(
+      `
+        SELECT
+          cr.*,
+          claimant.email AS claimant_email,
+          claimant.name AS claimant_name
+        FROM claim_requests cr
+        LEFT JOIN users claimant ON claimant.id = COALESCE(cr.claimant_user_id, cr.claimant_id)
+        WHERE cr.id = $1
+          AND cr.post_id = $2
+          AND cr.status = 'accepted'
+        FOR UPDATE OF cr
+      `,
+      [selectedClaimId, req.params.id],
+    );
+
+    if (!claimResult.rows.length) {
+      await client.query('ROLLBACK');
+      transactionOpen = false;
+      return res.status(400).json({ error: 'Selected claim must be an accepted claim for this post.' });
+    }
+
+    const rejectedClaims = await client.query(
+      `
+        UPDATE claim_requests
+        SET status = 'rejected',
+            updated_at = NOW()
+        WHERE post_id = $1
+          AND id <> $2
+          AND status IN ('pending', 'accepted')
+        RETURNING id
+      `,
+      [req.params.id, selectedClaimId],
+    );
+
+    const { rows } = await client.query(
+      `
+        UPDATE posts
+        SET status = 'resolved',
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, title, status, updated_at
+      `,
+      [req.params.id],
+    );
+
+    await client.query('COMMIT');
+    transactionOpen = false;
 
     let noticeSent = false;
     try {
       noticeSent = await sendAdministrativeNotice({
-        email: rows[0].owner_email,
+        email: postResult.rows[0].owner_email,
         subject: '[Back2You@KAIST] Your post was resolved',
         text: `Your post "${rows[0].title}" was marked resolved after admin verification.`,
       });
@@ -337,10 +399,20 @@ async function resolvePostByAdmin(req, res) {
       console.error('Failed to send resolution notice:', error);
     }
 
-    return res.json({ post: rows[0], noticeSent });
+    return res.json({
+      post: rows[0],
+      resolvedClaim: claimResult.rows[0],
+      rejectedClaimCount: rejectedClaims.rowCount,
+      noticeSent,
+    });
   } catch (error) {
+    if (transactionOpen) {
+      await client.query('ROLLBACK');
+    }
     console.error('Failed to resolve post:', error);
     return res.status(500).json({ error: 'Failed to resolve post.' });
+  } finally {
+    client.release();
   }
 }
 
@@ -458,11 +530,85 @@ async function listPendingResolutions(req, res) {
           p.location,
           p.status,
           p.images,
+          p.date_occurred,
           p.created_at,
           p.updated_at,
           u.email AS owner_email,
           u.name AS owner_name,
-          c.name AS category_name
+          c.name AS category_name,
+          (
+            SELECT JSON_BUILD_OBJECT(
+              'id', cr.id,
+              'claimant_user_id', COALESCE(cr.claimant_user_id, cr.claimant_id),
+              'claimant_name', claimant.name,
+              'claimant_email', claimant.email,
+              'message', cr.message,
+              'details', COALESCE(cr.details, cr.message),
+              'found_location', cr.found_location,
+              'found_date', cr.found_date,
+              'proof_images', COALESCE(cr.proof_images, ARRAY[]::TEXT[]),
+              'status', cr.status,
+              'created_at', cr.created_at,
+              'updated_at', cr.updated_at
+            )
+            FROM claim_requests cr
+            LEFT JOIN users claimant ON claimant.id = COALESCE(cr.claimant_user_id, cr.claimant_id)
+            WHERE cr.post_id = p.id
+              AND cr.status = 'accepted'
+            ORDER BY cr.updated_at DESC
+            LIMIT 1
+          ) AS accepted_claim,
+          COALESCE(
+            (
+              SELECT JSON_AGG(
+                JSON_BUILD_OBJECT(
+                  'id', cr.id,
+                  'claimant_user_id', COALESCE(cr.claimant_user_id, cr.claimant_id),
+                  'claimant_name', claimant.name,
+                  'claimant_email', claimant.email,
+                  'message', cr.message,
+                  'details', COALESCE(cr.details, cr.message),
+                  'found_location', cr.found_location,
+                  'found_date', cr.found_date,
+                  'proof_images', COALESCE(cr.proof_images, ARRAY[]::TEXT[]),
+                  'status', cr.status,
+                  'created_at', cr.created_at,
+                  'updated_at', cr.updated_at
+                )
+                ORDER BY cr.updated_at DESC
+              )
+              FROM claim_requests cr
+              LEFT JOIN users claimant ON claimant.id = COALESCE(cr.claimant_user_id, cr.claimant_id)
+              WHERE cr.post_id = p.id
+                AND cr.status = 'accepted'
+            ),
+            '[]'::json
+          ) AS accepted_claims,
+          COALESCE(
+            (
+              SELECT JSON_AGG(
+                JSON_BUILD_OBJECT(
+                  'id', cr.id,
+                  'claimant_user_id', COALESCE(cr.claimant_user_id, cr.claimant_id),
+                  'claimant_name', claimant.name,
+                  'claimant_email', claimant.email,
+                  'message', cr.message,
+                  'details', COALESCE(cr.details, cr.message),
+                  'found_location', cr.found_location,
+                  'found_date', cr.found_date,
+                  'proof_images', COALESCE(cr.proof_images, ARRAY[]::TEXT[]),
+                  'status', cr.status,
+                  'created_at', cr.created_at,
+                  'updated_at', cr.updated_at
+                )
+                ORDER BY cr.created_at DESC
+              )
+              FROM claim_requests cr
+              LEFT JOIN users claimant ON claimant.id = COALESCE(cr.claimant_user_id, cr.claimant_id)
+              WHERE cr.post_id = p.id
+            ),
+            '[]'::json
+          ) AS claim_requests
         FROM posts p
         LEFT JOIN users u ON u.id = p.user_id
         LEFT JOIN categories c ON c.id = p.category_id
@@ -576,7 +722,7 @@ async function getUserActivity(req, res) {
     const [posts, comments, reports] = await Promise.all([
       pool.query(
         `
-          SELECT id, title AS label, status, created_at
+          SELECT id, id AS post_id, title AS label, status, created_at
           FROM posts
           WHERE user_id = $1
           ORDER BY created_at DESC
@@ -586,7 +732,7 @@ async function getUserActivity(req, res) {
       ),
       pool.query(
         `
-          SELECT c.id, p.title AS post_title, c.content AS label, c.created_at
+          SELECT c.id, p.id AS post_id, p.title AS post_title, c.content AS label, c.created_at
           FROM comments c
           LEFT JOIN posts p ON p.id = c.post_id
           WHERE c.user_id = $1
@@ -597,7 +743,7 @@ async function getUserActivity(req, res) {
       ),
       pool.query(
         `
-          SELECT r.id, p.title AS post_title, r.reason AS label, r.created_at
+          SELECT r.id, p.id AS post_id, p.title AS post_title, r.reason AS label, r.created_at
           FROM reports r
           LEFT JOIN posts p ON p.id = r.post_id
           WHERE r.reported_by = $1
