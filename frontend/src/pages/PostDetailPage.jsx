@@ -672,12 +672,9 @@ export default function PostDetailPage() {
                 </h2>
               </div>
               {isClaimingLostPost && (
-                <input
-                  className="h-12 w-full rounded-2xl border border-blue-100 bg-white px-4 text-sm outline-none focus:border-blue-500"
-                  placeholder="Found location"
-                  required
-                  value={claimForm.found_location}
-                  onChange={(event) => updateClaimField('found_location', event.target.value)}
+                <LocationPicker
+                  location={claimForm.found_location}
+                  onChange={(value) => updateClaimField('found_location', value)}
                 />
               )}
               <input
