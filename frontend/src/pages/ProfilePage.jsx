@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import MobileLayout from '../components/MobileLayout';
@@ -13,6 +13,14 @@ const STATUS_LABEL = {
   resolved: { text: 'Resolved', cls: 'bg-blue-100 text-blue-700' },
 };
 
+async function fetchProfileData() {
+  const [profileRes, postsRes] = await Promise.all([
+    api.get('/users/me'),
+    api.get('/users/me/posts'),
+  ]);
+  return { profile: profileRes.data, posts: postsRes.data };
+}
+
 export default function ProfilePage() {
   const { login, logout, token } = useAuth();
   const navigate = useNavigate();
@@ -25,29 +33,38 @@ export default function ProfilePage() {
   const [success, setSuccess] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
+  useEffect(() => {
+    let active = true;
+
+    fetchProfileData()
+      .then((data) => {
+        if (!active) return;
+        setProfile(data.profile);
+        setEditName(data.profile.name || '');
+        setPosts(data.posts);
+      })
+      .catch(() => {
+        if (active) setError('Failed to load profile. Please refresh.');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function handleRefresh() {
+    setRefreshing(true);
     setError('');
     try {
-      const [profileRes, postsRes] = await Promise.all([
-        api.get('/users/me'),
-        api.get('/users/me/posts'),
-      ]);
-      setProfile(profileRes.data);
-      setPosts(postsRes.data);
-      return profileRes.data;
+      const data = await fetchProfileData();
+      setProfile(data.profile);
+      setPosts(data.posts);
     } catch {
       setError('Failed to load profile. Please refresh.');
     } finally {
-      if (isRefresh) setRefreshing(false);
+      setRefreshing(false);
     }
-  }, []);
-
-  useEffect(() => {
-    load().then((data) => {
-      if (data) setEditName(data.name || '');
-    });
-  }, [load]);
+  }
 
   async function handleSave(e) {
     e.preventDefault();
@@ -80,7 +97,7 @@ export default function ProfilePage() {
           <p>{error || 'Loading...'}</p>
           {error && (
             <button
-              onClick={() => load(true)}
+              onClick={handleRefresh}
               disabled={refreshing}
               className="flex items-center gap-2 rounded-xl bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-100 disabled:opacity-50"
             >
@@ -100,7 +117,7 @@ export default function ProfilePage() {
           <h1 className="text-2xl font-bold text-slate-950">My Profile</h1>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => load(true)}
+              onClick={handleRefresh}
               disabled={refreshing}
               aria-label="Refresh profile"
               className="rounded-full p-1.5 text-slate-400 hover:text-slate-600 disabled:opacity-50"
