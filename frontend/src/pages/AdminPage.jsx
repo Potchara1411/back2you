@@ -733,7 +733,6 @@ export default function AdminPage() {
 
           <div className="flex min-h-0 flex-1 flex-col bg-white">
             <AppHeader onRefresh={() => loadAdminData()} onLogout={handleLogout} />
-            <SectionHeader activeSection={activeSection} />
 
             {notice && (
               <div className="mx-5 mt-3 rounded-[10px] bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
@@ -864,18 +863,6 @@ function AppHeader({ onRefresh, onLogout }) {
         </button>
       </div>
     </header>
-  );
-}
-
-function SectionHeader({ activeSection }) {
-  const current = sections.find((item) => item.id === activeSection);
-
-  return (
-    <div className="shrink-0 border-b border-[#F3F4F6] bg-white px-5 py-3">
-      <h2 className="text-[16px] font-medium leading-6 tracking-normal text-[#101828]">
-        {current?.label || 'Admin'}
-      </h2>
-    </div>
   );
 }
 
