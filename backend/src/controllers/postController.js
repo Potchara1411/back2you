@@ -194,6 +194,8 @@ function parseClaimBody(body) {
 }
 
 function validateClaimInput(input, post, res) {
+  const claimDateLabel = post?.type === 'lost' ? 'Found date' : 'Lost date';
+
   if (!input.message) {
     res.status(400).json({ error: 'Claim message is required' });
     return false;
@@ -203,16 +205,16 @@ function validateClaimInput(input, post, res) {
     return false;
   }
   if (!input.foundDate) {
-    res.status(400).json({ error: post?.type === 'lost' ? 'Found date is required' : 'Lost date is required' });
+    res.status(400).json({ error: `${claimDateLabel} is required` });
     return false;
   }
   const foundAt = new Date(input.foundDate);
   if (Number.isNaN(foundAt.getTime())) {
-    res.status(400).json({ error: 'Found date is invalid' });
+    res.status(400).json({ error: `${claimDateLabel} is invalid` });
     return false;
   }
   if (foundAt > new Date()) {
-    res.status(400).json({ error: 'Found date cannot be in the future' });
+    res.status(400).json({ error: `${claimDateLabel} cannot be in the future` });
     return false;
   }
   return true;
