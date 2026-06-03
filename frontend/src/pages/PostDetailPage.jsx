@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CalendarIcon, ChevronLeftIcon, LocationIcon, PlusIcon, TagIcon } from '../components/Icons';
 import MobileLayout from '../components/MobileLayout';
@@ -25,6 +25,7 @@ const nextStatuses = {
   pending_resolution: [],
   resolved: [],
 };
+const claimableStatuses = new Set(['open', 'claimed']);
 
 const statusCopy = {
   open: 'Open',
@@ -390,6 +391,7 @@ export default function PostDetailPage() {
     proof_images: [],
   });
   const [claimSubmitting, setClaimSubmitting] = useState(false);
+  const claimProofInputRef = useRef(null);
 
   useEffect(() => {
     api.get('/posts/categories')
@@ -451,7 +453,7 @@ export default function PostDetailPage() {
     Number(claim.claimant_user_id) === Number(user?.id)
     && ['pending', 'accepted'].includes(claim.status)
   ));
-  const canSubmitClaim = Boolean(user && post && !isPostOwner && post.status === 'open' && !ownActiveClaim);
+  const canSubmitClaim = Boolean(user && post && !isAdmin && !isPostOwner && claimableStatuses.has(post.status) && !ownActiveClaim);
   const canReviewClaims = Boolean(post && (isPostOwner || isAdmin));
   const selectedCategoryId = form?.category_id || categories.find((category) => category.label === post?.category_name)?.id || '';
   const isClaimingLostPost = post?.type === 'lost';
@@ -612,7 +614,6 @@ export default function PostDetailPage() {
         ...data.post,
         claim_requests: (current.claim_requests || []).map((item) => {
           if (item.id === claim.id) return { ...item, ...data.claim };
-          if (status === 'accepted' && item.status === 'pending') return { ...item, status: 'rejected' };
           return item;
         }),
       }));
@@ -665,7 +666,16 @@ export default function PostDetailPage() {
   }
 
   return (
-    <MobileLayout showHeader={false}>
+    <MobileLayout showHeader={false} showNav={!isAdmin}>
+      {/* Fixed-position so refocusing after the OS photo picker never causes a scroll jump */}
+      <input
+        ref={claimProofInputRef}
+        type="file"
+        accept="image/*"
+        tabIndex={-1}
+        style={{ position: 'fixed', opacity: 0, pointerEvents: 'none', width: 0, height: 0, top: 0, left: 0 }}
+        onChange={handleClaimProofImage}
+      />
       <article className="min-h-full bg-white">
         <section className="relative h-[360px] overflow-hidden bg-slate-100">
           {heroImage ? (
@@ -733,7 +743,7 @@ export default function PostDetailPage() {
           <div className="grid gap-3">
             <DetailRow icon={LocationIcon} label="Location" value={post.location || 'Not specified'} />
             <DetailRow icon={CalendarIcon} label={post.type === 'found' ? 'Found date' : 'Lost date'} value={formatDate(post.date_occurred)} />
-            <DetailRow icon={TagIcon} label={post.type === 'found' ? 'Finder' : 'Owner'} value={post.author_name || `User #${post.user_id}`} />
+            <DetailRow icon={TagIcon} label="Posted by" value={post.author_name || `User #${post.user_id}`} />
           </div>
 
           <StatusStepper status={post.status} />
@@ -770,10 +780,13 @@ export default function PostDetailPage() {
                 value={claimForm.message}
                 onChange={(event) => updateClaimField('message', event.target.value)}
               />
-              <label className="block rounded-2xl border border-dashed border-blue-200 bg-white px-4 py-4 text-center text-sm font-bold text-blue-600">
+              <button
+                type="button"
+                className="block w-full rounded-2xl border border-dashed border-blue-200 bg-white px-4 py-4 text-center text-sm font-bold text-blue-600"
+                onClick={() => claimProofInputRef.current?.click()}
+              >
                 {claimForm.proof_images.length ? 'Replace proof image' : 'Add optional proof image'}
-                <input className="sr-only" type="file" accept="image/*" onChange={handleClaimProofImage} />
-              </label>
+              </button>
               {claimForm.proof_images[0] && (
                 <img className="h-24 w-24 rounded-2xl object-cover" src={claimForm.proof_images[0]} alt="Proof preview" />
               )}
