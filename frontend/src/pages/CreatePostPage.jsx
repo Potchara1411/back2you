@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { CalendarIcon, ChevronLeftIcon, LocationIcon, PlusIcon, TagIcon } from '../components/Icons';
 import MobileLayout from '../components/MobileLayout';
 import api from '../services/api';
+import { uploadImage } from '../services/cloudinary';
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
@@ -154,15 +155,6 @@ function findAreaForBuilding(buildingName) {
   return Object.entries(buildingsByArea).find(([, buildingNames]) => buildingNames.includes(buildingName))?.[0] || '';
 }
 
-function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 function FieldShell({ icon: FieldIcon, label, children }) {
   return (
     <label className="block">
@@ -242,12 +234,16 @@ export default function CreatePostPage() {
     }
 
     setError('');
-    const dataUrl = await readFileAsDataUrl(file);
-    setImages((current) => {
-      const next = [...current];
-      next[index] = dataUrl;
-      return next;
-    });
+    try {
+      const url = await uploadImage(file);
+      setImages((current) => {
+        const next = [...current];
+        next[index] = url;
+        return next;
+      });
+    } catch (uploadError) {
+      setError(uploadError.message || 'Image upload failed.');
+    }
     event.target.value = '';
   }
 
