@@ -728,9 +728,8 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-white text-[#101828] sm:flex sm:items-center sm:justify-center sm:bg-slate-50 sm:p-8" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
       <div className="relative mx-auto min-h-screen max-w-md bg-white shadow-none sm:h-[860px] sm:min-h-0 sm:w-[430px] sm:overflow-hidden sm:rounded-[3.25rem] sm:border-[14px] sm:border-[#101828] sm:shadow-[0_28px_90px_rgba(15,23,42,0.24)]">
-        <div className="box-border flex min-h-screen flex-col overflow-hidden bg-[#F9FAFB] sm:h-full sm:min-h-0 sm:rounded-[2.35rem]">
-          <PhoneStatusBar />
-
+        <PhoneStatusBar />
+        <div className="box-border flex min-h-screen flex-col overflow-hidden bg-white sm:h-full sm:min-h-0 sm:rounded-[2.35rem] sm:pt-12">
           <div className="flex min-h-0 flex-1 flex-col bg-white">
             <AppHeader onRefresh={() => loadAdminData()} onLogout={handleLogout} />
 
@@ -825,9 +824,7 @@ export default function AdminPage() {
 
 function PhoneStatusBar() {
   return (
-    <div className="flex h-11 shrink-0 items-start justify-center bg-white pt-2">
-      <div className="h-6 w-32 rounded-full bg-[#101828]" />
-    </div>
+    <div className="pointer-events-none absolute left-1/2 top-4 z-40 hidden h-7 w-32 -translate-x-1/2 rounded-full bg-[#101828] sm:block" />
   );
 }
 
