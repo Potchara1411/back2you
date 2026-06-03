@@ -726,9 +726,9 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-white text-[#101828]" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-      <div className="flex min-h-screen items-center justify-center px-0 py-0 sm:px-6 sm:py-6">
-        <div className="box-border flex h-[min(844px,100vh)] w-[min(390px,100vw)] flex-col overflow-hidden bg-[#F9FAFB] shadow-2xl sm:h-[844px] sm:w-[390px] sm:rounded-[48px] sm:border-[14px] sm:border-[#101828]">
+    <main className="min-h-screen bg-white text-[#101828] sm:flex sm:items-center sm:justify-center sm:bg-slate-50 sm:p-8" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+      <div className="relative mx-auto min-h-screen max-w-md bg-white shadow-none sm:h-[860px] sm:min-h-0 sm:w-[430px] sm:overflow-hidden sm:rounded-[3.25rem] sm:border-[14px] sm:border-[#101828] sm:shadow-[0_28px_90px_rgba(15,23,42,0.24)]">
+        <div className="box-border flex min-h-screen flex-col overflow-hidden bg-[#F9FAFB] sm:h-full sm:min-h-0 sm:rounded-[2.35rem]">
           <PhoneStatusBar />
 
           <div className="flex min-h-0 flex-1 flex-col bg-white">
