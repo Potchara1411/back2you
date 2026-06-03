@@ -28,15 +28,19 @@ function getDateLabel(post) {
   return 'Date';
 }
 
+function getPostId(post) {
+  return post.id ?? post.post_id ?? post.postId;
+}
+
 export default function PostCard({ post }) {
   const image = post.images?.[0];
   const statusClass = statusStyles[post.status] || statusStyles.open;
-  const ownerLabel = post.type === 'found' ? 'Finder' : 'Owner';
+  const postId = getPostId(post);
 
   return (
     <Link
-      to={`/post/${post.id}`}
-      className="block overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_2px_8px_rgba(15,23,42,0.16)] transition active:scale-[0.99]"
+      to={`/posts/${postId}`}
+      className="block cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_2px_8px_rgba(15,23,42,0.16)] transition active:scale-[0.99]"
     >
       <div className="relative h-48 bg-slate-100">
         {image ? (
@@ -50,9 +54,6 @@ export default function PostCard({ post }) {
         )}
         <span className={`absolute right-4 top-4 rounded-full px-5 py-2 text-sm font-semibold capitalize ${statusClass}`}>
           {formatStatus(post.status === 'open' ? post.type : post.status)}
-        </span>
-        <span className="absolute bottom-4 right-4 rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 shadow-sm">
-          {ownerLabel}
         </span>
       </div>
 

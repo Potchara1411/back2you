@@ -4,7 +4,7 @@ import { HomeIcon, PlusIcon, SearchIcon, UserIcon } from './Icons';
 const navItems = [
   { to: '/', label: 'Home', icon: HomeIcon },
   { to: '/search', label: 'Search', icon: SearchIcon },
-  { to: '/create', label: 'Post', icon: PlusIcon },
+  { to: '/posts/new', label: 'Post', icon: PlusIcon },
   { to: '/profile', label: 'Profile', icon: UserIcon },
 ];
 
@@ -15,7 +15,7 @@ export function AppHeader() {
         <img
           alt="KAIST"
           className="h-8 w-24 shrink-0 object-contain"
-          src="/kaist-logo.svg"
+          src="/kaist-logo.jpeg"
         />
         <div className="text-xl font-semibold tracking-normal text-slate-950">
           KAIST Lost & Found
@@ -48,7 +48,7 @@ export function BottomNav() {
   );
 }
 
-export default function MobileLayout({ children, showHeader = true }) {
+export default function MobileLayout({ children, showHeader = true, showNav = true }) {
   return (
     <main className="min-h-screen bg-white text-slate-950 sm:flex sm:items-center sm:justify-center sm:bg-slate-50 sm:p-8">
       <div className="pointer-events-none hidden sm:absolute sm:bottom-3 sm:h-8 sm:w-[360px] sm:rounded-full sm:bg-slate-950/20 sm:blur-xl sm:content-['']" />
@@ -56,11 +56,11 @@ export default function MobileLayout({ children, showHeader = true }) {
         <div className="pointer-events-none absolute left-1/2 top-4 z-40 hidden h-7 w-32 -translate-x-1/2 rounded-full bg-slate-950 sm:block" />
         <div className="flex min-h-screen flex-col bg-white sm:h-full sm:min-h-0 sm:rounded-[2.35rem] sm:pt-12">
           {showHeader && <AppHeader />}
-          <div className="flex-1 pb-28 sm:min-h-0 sm:overflow-y-auto">
+          <div className={`flex-1 sm:min-h-0 sm:overflow-y-auto ${showNav ? 'pb-28' : ''}`}>
             {children}
           </div>
         </div>
-        <BottomNav />
+        {showNav && <BottomNav />}
       </div>
     </main>
   );

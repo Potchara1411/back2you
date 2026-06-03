@@ -137,3 +137,12 @@ export function InfoIcon({ className }) {
     </Icon>
   );
 }
+
+export function RefreshIcon({ className }) {
+  return (
+    <Icon className={className}>
+      <path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 5v4h4" />
+      <path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4" />
+    </Icon>
+  );
+}
