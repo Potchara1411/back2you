@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import MobileLayout from '../components/MobileLayout';
+import LocationPicker from '../components/LocationPicker';
 import PostCard from '../components/PostCard';
 import {
   CalendarIcon,
@@ -10,12 +11,7 @@ import {
   SearchIcon,
   TagIcon,
 } from '../components/Icons';
-import {
-  buildingsByArea,
-  composeLocation,
-  DEFAULT_CATEGORY_NAMES,
-  getLocationDetails,
-} from '../data/postOptions';
+import { DEFAULT_CATEGORY_NAMES } from '../data/postOptions';
 import { getMockList, searchMockPosts } from '../data/mockPosts';
 import api from '../services/api';
 
@@ -173,9 +169,6 @@ export default function SearchPage() {
     status: '',
     scope: 'unsolved',
   });
-  const [area, setArea] = useState('North');
-  const [building, setBuilding] = useState('');
-  const [locationDetail, setLocationDetail] = useState('');
   const [calendarMonth, setCalendarMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [sortBy, setSortBy] = useState('newest');
   const [viewMode, setViewMode] = useState('compact');
@@ -214,7 +207,6 @@ export default function SearchPage() {
   const firstWeekday = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1).getDay();
   const nextMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
   const isNextMonthInFuture = nextMonth > new Date(today.getFullYear(), today.getMonth(), 1);
-  const currentLocationDetails = building ? getLocationDetails(building) : [];
   const hasActiveFilters = Boolean(
     filters.keyword
       || filters.category
@@ -290,18 +282,15 @@ export default function SearchPage() {
       scope: 'unsolved',
     };
     setFilters(emptyFilters);
-    setArea('North');
-    setBuilding('');
-    setLocationDetail('');
     setSortBy('newest');
     setOpenFilter('');
     runSearch(1, emptyFilters);
   }
 
-  function applyLocation(nextArea = area, nextBuilding = building, nextLocationDetail = locationDetail) {
+  function applyLocation(location) {
     const nextFilters = {
       ...filters,
-      location: composeLocation(nextArea, nextBuilding, nextLocationDetail),
+      location,
     };
     setFilters(nextFilters);
     runSearch(1, nextFilters);
@@ -510,56 +499,11 @@ export default function SearchPage() {
             )}
 
             {openFilter === 'location' && (
-              <div className="space-y-2">
-              <select
-                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
-                value={area}
-                onChange={(event) => {
-                  const nextArea = event.target.value;
-                  setArea(nextArea);
-                  setBuilding('');
-                  setLocationDetail('');
-                  applyLocation(nextArea, '', '');
-                }}
-              >
-                <option value="">Any area</option>
-                {Object.keys(buildingsByArea).map((areaOption) => (
-                  <option key={areaOption}>{areaOption}</option>
-                ))}
-              </select>
-              {area && (
-                <select
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
-                  value={building}
-                  onChange={(event) => {
-                    const nextBuilding = event.target.value;
-                    setBuilding(nextBuilding);
-                    setLocationDetail('');
-                    applyLocation(area, nextBuilding, '');
-                  }}
-                >
-                  <option value="">Any building in {area}</option>
-                  {buildingsByArea[area].map((buildingOption) => (
-                    <option key={buildingOption}>{buildingOption}</option>
-                  ))}
-                </select>
-              )}
-              {building && (
-                <select
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
-                  value={locationDetail}
-                  onChange={(event) => {
-                    setLocationDetail(event.target.value);
-                    applyLocation(area, building, event.target.value);
-                  }}
-                >
-                  <option value="">Any floor / entrance</option>
-                  {currentLocationDetails.map((locationDetailOption) => (
-                    <option key={locationDetailOption}>{locationDetailOption}</option>
-                  ))}
-                </select>
-              )}
-            </div>
+              <LocationPicker
+                framed={false}
+                location={filters.location}
+                onChange={applyLocation}
+              />
             )}
           </div>
         )}
