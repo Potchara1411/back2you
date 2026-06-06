@@ -694,7 +694,8 @@ export default function AdminPage() {
   }
 
   async function deleteCategory(category) {
-    const confirmed = window.confirm(`Delete ${category.name}? Active posts will be reassigned to Other.`);
+    const fallbackName = category.name === 'Other' ? 'Uncategorized' : 'Other';
+    const confirmed = window.confirm(`Delete ${category.name}? Active posts will be reassigned to ${fallbackName}.`);
     if (!confirmed) return;
 
     if (isPreview) {
@@ -705,7 +706,8 @@ export default function AdminPage() {
 
     try {
       const { data } = await api.delete(`/admin/categories/${category.id}`);
-      setCategories((current) => current.filter((item) => item.id !== category.id));
+      const categoryResponse = await api.get('/admin/categories');
+      setCategories(categoryResponse.data.categories || []);
       setNotice(`${data.reassignedCount || 0} post(s) reassigned to ${data.fallbackCategory?.name || 'Other'}.`);
     } catch (error) {
       setNotice(error.response?.data?.error || 'Failed to delete category.');
