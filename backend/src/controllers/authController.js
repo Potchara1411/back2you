@@ -150,7 +150,11 @@ async function verifyOtp(req, res) {
     const user = rows[0];
 
     if (!user) return res.status(404).json({ error: 'User not found' });
-    if (user.is_blocked) return res.status(403).json({ error: 'Account is blocked' });
+    if (user.is_blocked) {
+      return res.status(403).json({
+        error: 'Account is blocked. Please contact back2you.admin@gmail.com.',
+      });
+    }
     if (user.otp_code !== otp) return res.status(401).json({ error: 'Invalid OTP' });
     if (new Date() > new Date(user.otp_expires_at)) {
       return res.status(401).json({ error: 'OTP has expired' });
