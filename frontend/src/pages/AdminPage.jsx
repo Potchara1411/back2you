@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { buildingsByArea, getLocationDetails } from '../data/postOptions';
 import api from '../services/api';
 
 const previewPosts = [
@@ -70,6 +71,26 @@ const previewPosts = [
       proof_images: [],
       status: 'accepted',
     },
+    accepted_claims: [
+      {
+        claimant_name: 'Yilei Yan',
+        claimant_email: 'yilei@kaist.ac.kr',
+        message: 'I can identify the case scratches and have the matching serial photo.',
+        found_location: 'N10 lobby',
+        found_date: '2026-05-17T12:30:00Z',
+        proof_images: [],
+        status: 'accepted',
+      },
+      {
+        claimant_name: 'Eric Kim',
+        claimant_email: 'eric@kaist.ac.kr',
+        message: 'I also have proof from the handoff chat.',
+        found_location: 'N10 lobby',
+        found_date: '2026-05-17T12:45:00Z',
+        proof_images: [],
+        status: 'accepted',
+      },
+    ],
     claim_requests: [],
     created_at: '2026-05-08T12:30:00Z',
     updated_at: '2026-05-17T12:30:00Z',
@@ -90,14 +111,6 @@ const previewCategories = [
   { id: 'cat-3', name: 'Other', active_post_count: 0, total_post_count: 0 },
 ];
 
-const sections = [
-  { id: 'posts', label: 'Posts' },
-  { id: 'reports', label: 'Reports' },
-  { id: 'resolutions', label: 'Resolve' },
-  { id: 'users', label: 'Users' },
-  { id: 'settings', label: 'Settings' },
-];
-
 const filters = [
   { id: 'all', label: 'All' },
   { id: 'reported', label: 'Reported' },
@@ -108,7 +121,15 @@ const filters = [
   { id: 'old_unresolved', label: 'Old' },
 ];
 
+const noticeTemplates = [
+  'Please review your recent activity and follow Back2You@KAIST platform rules.',
+  'Please update your post with clearer details or images so other users can verify it.',
+  'Please provide clearer verification proof before this item can be resolved.',
+  'Your post or activity may violate platform rules. Please correct it as soon as possible.',
+];
+
 const avatarTones = ['bg-blue-100', 'bg-green-100', 'bg-red-100', 'bg-purple-100', 'bg-amber-100', 'bg-pink-100'];
+const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const statusClasses = {
   open: 'bg-green-100 text-green-700',
@@ -126,6 +147,30 @@ function formatDate(value) {
     day: 'numeric',
     year: 'numeric',
   }).format(new Date(value));
+}
+
+function getTodayDateValue() {
+  return new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+function getMonthDays(monthDate) {
+  return Array.from(
+    { length: new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate() },
+    (_, index) => index + 1,
+  );
+}
+
+function formatDateValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getLocationFilterValue({ area, building, detail }) {
+  if (area && building && detail) return `${area} - ${building}, ${detail}`;
+  if (area && building) return `${area} - ${building}`;
+  return area || '';
 }
 
 function matchesFilter(post, filter) {
@@ -238,6 +283,7 @@ export default function AdminPage() {
   const [activeFilter, setActiveFilter] = useState('all');
   const [postKeyword, setPostKeyword] = useState('');
   const [postAdvancedFilters, setPostAdvancedFilters] = useState({ category: '', date: '', location: '' });
+  const [postLocationFilter, setPostLocationFilter] = useState({ area: '', building: '', detail: '' });
   const [openPostFilter, setOpenPostFilter] = useState('');
   const [postSortBy, setPostSortBy] = useState('newest');
   const [activeSection, setActiveSection] = useState('posts');
@@ -245,6 +291,7 @@ export default function AdminPage() {
   const [notice, setNotice] = useState('');
   const [isPreview, setIsPreview] = useState(false);
   const [activity, setActivity] = useState(null);
+  const [noticeComposer, setNoticeComposer] = useState(null);
 
   const reportedPreview = useMemo(
     () => normalizeReportRows(previewPosts.filter((post) => Number(post.report_count) > 0)),
@@ -349,11 +396,29 @@ export default function AdminPage() {
   );
 
   function updatePostAdvancedFilter(key, value) {
+    if (key === 'date' && value && value > getTodayDateValue()) return;
     setPostAdvancedFilters((current) => ({ ...current, [key]: value }));
   }
 
-  function clearPostAdvancedFilters() {
+  function updatePostLocationFilter(nextLocationFilter) {
+    const mergedLocationFilter = {
+      ...postLocationFilter,
+      ...nextLocationFilter,
+    };
+
+    setPostLocationFilter(mergedLocationFilter);
+    setPostAdvancedFilters((current) => ({
+      ...current,
+      location: getLocationFilterValue(mergedLocationFilter),
+    }));
+  }
+
+  function clearPostFilters() {
+    setPostKeyword('');
+    setActiveFilter('all');
     setPostAdvancedFilters({ category: '', date: '', location: '' });
+    setPostLocationFilter({ area: '', building: '', detail: '' });
+    setPostSortBy('newest');
     setOpenPostFilter('');
   }
 
@@ -466,22 +531,29 @@ export default function AdminPage() {
     }
   }
 
-  async function resolvePost(post) {
-    const confirmed = window.confirm('Mark this pending post as resolved?');
+  async function resolvePost(post, claim) {
+    if (!claim?.id && !isPreview) {
+      setNotice('Select one accepted claim before resolving.');
+      return;
+    }
+
+    const claimant = claim?.claimant_name || claim?.claimant_email || 'this claimant';
+    const confirmed = window.confirm(`Resolve this post for ${claimant}? Other claims will be rejected.`);
     if (!confirmed) return;
 
     if (isPreview) {
       setResolutions((current) => current.filter((item) => item.id !== post.id));
       updatePostEverywhere(post.id, (item) => ({ ...item, status: 'resolved' }));
-      setNotice('Preview post resolved.');
+      setNotice('Preview post resolved for the selected claim.');
       return;
     }
 
     try {
-      const { data } = await api.patch(`/admin/posts/${post.id}/resolve`);
+      const { data } = await api.patch(`/admin/posts/${post.id}/resolve`, { claimId: claim.id });
       setResolutions((current) => current.filter((item) => item.id !== post.id));
       updatePostEverywhere(post.id, (item) => ({ ...item, ...data.post }));
-      setNotice(data.noticeSent ? 'Post resolved and owner notified.' : 'Post resolved.');
+      const rejectedCopy = data.rejectedClaimCount ? ` ${data.rejectedClaimCount} other claim(s) rejected.` : '';
+      setNotice(data.noticeSent ? `Post resolved and owner notified.${rejectedCopy}` : `Post resolved.${rejectedCopy}`);
     } catch (error) {
       setNotice(error.response?.data?.error || 'Failed to resolve post.');
     }
@@ -542,7 +614,7 @@ export default function AdminPage() {
       setActivity({
         user,
         activity: [
-          { id: 'a1', type: 'post', label: `${user.post_count || 0} posts`, created_at: new Date().toISOString() },
+          { id: 'preview-1', post_id: 'preview-1', type: 'post', label: `${user.post_count || 0} posts`, created_at: new Date().toISOString() },
           { id: 'a2', type: 'report', label: 'No recent reports in preview', created_at: new Date().toISOString() },
         ],
       });
@@ -560,17 +632,23 @@ export default function AdminPage() {
     }
   }
 
-  async function sendNotice(user) {
-    const message = window.prompt(`Administrative notice for ${user.email}`);
-    if (!message?.trim()) return;
+  function openNoticeComposer(user) {
+    setNoticeComposer({ user, message: '' });
+  }
 
+  async function submitNotice(message) {
+    const user = noticeComposer?.user;
+    const trimmed = message.trim();
+    if (!user || !trimmed) return;
+
+    setNoticeComposer(null);
     if (isPreview) {
       setNotice('Preview notice composed locally.');
       return;
     }
 
     try {
-      const { data } = await api.post(`/admin/users/${user.id}/notice`, { message: message.trim() });
+      const { data } = await api.post(`/admin/users/${user.id}/notice`, { message: trimmed });
       setNotice(data.message || 'Notice sent.');
     } catch (error) {
       setNotice(error.response?.data?.error || 'Failed to send notice.');
@@ -616,7 +694,8 @@ export default function AdminPage() {
   }
 
   async function deleteCategory(category) {
-    const confirmed = window.confirm(`Delete ${category.name}? Active posts will be reassigned to Other.`);
+    const fallbackName = category.name === 'Other' ? 'Uncategorized' : 'Other';
+    const confirmed = window.confirm(`Delete ${category.name}? Active posts will be reassigned to ${fallbackName}.`);
     if (!confirmed) return;
 
     if (isPreview) {
@@ -627,7 +706,8 @@ export default function AdminPage() {
 
     try {
       const { data } = await api.delete(`/admin/categories/${category.id}`);
-      setCategories((current) => current.filter((item) => item.id !== category.id));
+      const categoryResponse = await api.get('/admin/categories');
+      setCategories(categoryResponse.data.categories || []);
       setNotice(`${data.reassignedCount || 0} post(s) reassigned to ${data.fallbackCategory?.name || 'Other'}.`);
     } catch (error) {
       setNotice(error.response?.data?.error || 'Failed to delete category.');
@@ -656,14 +736,12 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-white text-[#101828]" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
-      <div className="flex min-h-screen items-center justify-center px-0 py-0 sm:px-6 sm:py-6">
-        <div className="box-border flex h-[min(844px,100vh)] w-[min(390px,100vw)] flex-col overflow-hidden bg-[#F9FAFB] shadow-2xl sm:h-[844px] sm:w-[390px] sm:rounded-[48px] sm:border-[14px] sm:border-[#101828]">
-          <PhoneStatusBar />
-
+    <main className="min-h-screen bg-white text-[#101828] sm:flex sm:items-center sm:justify-center sm:bg-slate-50 sm:p-8" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+      <div className="relative mx-auto min-h-screen max-w-md bg-white shadow-none sm:h-[860px] sm:min-h-0 sm:w-[430px] sm:overflow-hidden sm:rounded-[3.25rem] sm:border-[14px] sm:border-[#101828] sm:shadow-[0_28px_90px_rgba(15,23,42,0.24)]">
+        <PhoneStatusBar />
+        <div className="box-border flex min-h-screen flex-col overflow-hidden bg-white sm:h-full sm:min-h-0 sm:rounded-[2.35rem] sm:pt-12">
           <div className="flex min-h-0 flex-1 flex-col bg-white">
             <AppHeader onRefresh={() => loadAdminData()} onLogout={handleLogout} />
-            <SectionHeader activeSection={activeSection} />
 
             {notice && (
               <div className="mx-5 mt-3 rounded-[10px] bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
@@ -678,6 +756,7 @@ export default function AdminPage() {
                   activeFilter={activeFilter}
                   keyword={postKeyword}
                   advancedFilters={postAdvancedFilters}
+                  locationFilter={postLocationFilter}
                   categoryOptions={postCategoryOptions}
                   openFilter={openPostFilter}
                   sortBy={postSortBy}
@@ -685,7 +764,8 @@ export default function AdminPage() {
                   onFilterChange={setActiveFilter}
                   onKeywordChange={setPostKeyword}
                   onAdvancedFilterChange={updatePostAdvancedFilter}
-                  onClearAdvancedFilters={clearPostAdvancedFilters}
+                  onLocationFilterChange={updatePostLocationFilter}
+                  onClearFilters={clearPostFilters}
                   onOpenFilterChange={setOpenPostFilter}
                   onSortChange={setPostSortBy}
                   onHide={hidePost}
@@ -720,7 +800,7 @@ export default function AdminPage() {
                   onCloseActivity={() => setActivity(null)}
                   onShowActivity={showActivity}
                   onToggleBlock={toggleUserBlock}
-                  onSendNotice={sendNotice}
+                  onSendNotice={openNoticeComposer}
                 />
               )}
               {activeSection === 'settings' && (
@@ -741,15 +821,20 @@ export default function AdminPage() {
           <HomeIndicator />
         </div>
       </div>
+      {noticeComposer && (
+        <NoticeComposerModal
+          composer={noticeComposer}
+          onClose={() => setNoticeComposer(null)}
+          onSubmit={submitNotice}
+        />
+      )}
     </main>
   );
 }
 
 function PhoneStatusBar() {
   return (
-    <div className="flex h-11 shrink-0 items-start justify-center bg-white pt-2">
-      <div className="h-6 w-32 rounded-full bg-[#101828]" />
-    </div>
+    <div className="pointer-events-none absolute left-1/2 top-4 z-40 hidden h-7 w-32 -translate-x-1/2 rounded-full bg-[#101828] sm:block" />
   );
 }
 
@@ -757,9 +842,11 @@ function AppHeader({ onRefresh, onLogout }) {
   return (
     <header className="flex h-[61px] shrink-0 items-center border-b border-[#F3F4F6] bg-white px-5">
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        <div className="flex h-[18px] w-16 items-center justify-center rounded-sm bg-[#155DFC] text-[10px] font-bold tracking-wide text-white">
-          KAIST
-        </div>
+        <img
+          alt="KAIST"
+          className="h-8 w-24 shrink-0 object-contain"
+          src="/kaist-logo.jpeg"
+        />
         <h1 className="truncate text-[18px] font-medium leading-7 tracking-normal text-[#101828]">
           Admin Console
         </h1>
@@ -786,18 +873,6 @@ function AppHeader({ onRefresh, onLogout }) {
   );
 }
 
-function SectionHeader({ activeSection }) {
-  const current = sections.find((item) => item.id === activeSection);
-
-  return (
-    <div className="shrink-0 border-b border-[#F3F4F6] bg-white px-5 py-3">
-      <h2 className="text-[16px] font-medium leading-6 tracking-normal text-[#101828]">
-        {current?.label || 'Admin'}
-      </h2>
-    </div>
-  );
-}
-
 function UsersPanel({ users, loading, activity, onCloseActivity, onShowActivity, onToggleBlock, onSendNotice }) {
   const [query, setQuery] = useState('');
   const filteredUsers = users.filter((user) => {
@@ -818,19 +893,23 @@ function UsersPanel({ users, loading, activity, onCloseActivity, onShowActivity,
         placeholder="Search by ID, name, or email"
       />
 
-      {activity && <ActivityPanel activity={activity} onClose={onCloseActivity} />}
-
       {filteredUsers.length ? (
-        filteredUsers.map((user, index) => (
-          <UserCard
-            key={user.id}
-            user={user}
-            tone={avatarTones[index % avatarTones.length]}
-            onShowActivity={onShowActivity}
-            onToggleBlock={onToggleBlock}
-            onSendNotice={onSendNotice}
-          />
-        ))
+        filteredUsers.map((user, index) => {
+          const isActivityOpen = String(activity?.user?.id) === String(user.id);
+
+          return (
+            <div key={user.id} className="flex flex-col gap-3">
+              <UserCard
+                user={user}
+                tone={avatarTones[index % avatarTones.length]}
+                onShowActivity={onShowActivity}
+                onToggleBlock={onToggleBlock}
+                onSendNotice={onSendNotice}
+              />
+              {isActivityOpen && <ActivityPanel activity={activity} onClose={onCloseActivity} />}
+            </div>
+          );
+        })
       ) : (
         <EmptyState label="No users found." />
       )}
@@ -838,7 +917,14 @@ function UsersPanel({ users, loading, activity, onCloseActivity, onShowActivity,
   );
 }
 
+function getActivityPostId(item) {
+  if (item.type === 'post') return item.post_id || item.id;
+  return item.post_id || item.postId;
+}
+
 function ActivityPanel({ activity, onClose }) {
+  const navigate = useNavigate();
+
   return (
     <section className="rounded-[14px] border border-[#BFDBFE] bg-[#EFF6FF] p-4">
       <div className="flex items-center justify-between gap-3">
@@ -852,13 +938,35 @@ function ActivityPanel({ activity, onClose }) {
       </div>
       <div className="mt-3 space-y-2">
         {(activity.activity || []).length ? (
-          activity.activity.map((item) => (
-            <div key={`${item.type}-${item.id}`} className="rounded-[10px] bg-white px-3 py-2">
-              <p className="text-[12px] font-medium capitalize text-[#101828]">{item.type}</p>
-              <p className="mt-1 text-[12px] leading-4 text-[#6A7282]">{item.label || item.post_title || 'No details'}</p>
-              <p className="mt-1 text-[11px] text-[#99A1AF]">{formatDate(item.created_at)}</p>
-            </div>
-          ))
+          activity.activity.map((item) => {
+            const postId = getActivityPostId(item);
+            const content = (
+              <>
+                <p className="text-[12px] font-medium capitalize text-[#101828]">{item.type}</p>
+                <p className="mt-1 text-[12px] leading-4 text-[#6A7282]">{item.label || item.post_title || 'No details'}</p>
+                <p className="mt-1 text-[11px] text-[#99A1AF]">{formatDate(item.created_at)}</p>
+              </>
+            );
+
+            if (!postId) {
+              return (
+                <div key={`${item.type}-${item.id}`} className="rounded-[10px] bg-white px-3 py-2">
+                  {content}
+                </div>
+              );
+            }
+
+            return (
+              <button
+                key={`${item.type}-${item.id}`}
+                type="button"
+                onClick={() => navigate(`/posts/${postId}`)}
+                className="w-full rounded-[10px] bg-white px-3 py-2 text-left transition active:scale-[0.99]"
+              >
+                {content}
+              </button>
+            );
+          })
         ) : (
           <p className="text-[12px] text-[#6A7282]">No recent activity.</p>
         )}
@@ -867,13 +975,83 @@ function ActivityPanel({ activity, onClose }) {
   );
 }
 
+function NoticeComposerModal({ composer, onClose, onSubmit }) {
+  const [message, setMessage] = useState(composer.message || noticeTemplates[0]);
+  const target = composer.user?.email || composer.user?.name || 'user';
+  const canSend = message.trim().length > 0;
+
+  function submit(event) {
+    event.preventDefault();
+    if (!canSend) return;
+    onSubmit(message);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-5">
+      <form className="w-full max-w-[360px] rounded-[14px] bg-white p-4 shadow-2xl" onSubmit={submit}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[12px] font-medium uppercase text-[#155DFC]">Administrative Notice</p>
+            <h3 className="mt-1 break-words text-[14px] font-semibold leading-5 text-[#101828]">{target}</h3>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full bg-[#F3F4F6] px-3 py-1 text-[12px] font-medium text-[#364153]">
+            Close
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          <p className="text-[12px] font-medium text-[#6A7282]">Templates</p>
+          {noticeTemplates.map((template) => (
+            <button
+              key={template}
+              type="button"
+              onClick={() => setMessage(template)}
+              className={`w-full rounded-[10px] border px-3 py-2 text-left text-[12px] leading-4 ${
+                message === template
+                  ? 'border-[#155DFC] bg-[#EFF6FF] text-[#1447E6]'
+                  : 'border-[#E5E7EB] bg-[#F9FAFB] text-[#364153]'
+              }`}
+            >
+              {template}
+            </button>
+          ))}
+        </div>
+
+        <label className="mt-4 block text-[12px] font-medium text-[#6A7282]">
+          Message
+          <textarea
+            className="mt-2 min-h-24 w-full resize-none rounded-[10px] border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-[13px] leading-5 text-[#101828] outline-none focus:border-[#155DFC]"
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            placeholder="Write an administrative notice"
+          />
+        </label>
+
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button type="button" onClick={onClose} className="h-11 rounded-[10px] bg-[#F3F4F6] text-[13px] font-medium text-[#364153]">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!canSend}
+            className="h-11 rounded-[10px] bg-[#155DFC] text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Send
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function UserCard({ user, tone, onShowActivity, onToggleBlock, onSendNotice }) {
   const blocked = Boolean(user.is_blocked);
   const avatarUrl = userAvatarUrl(user);
+  const roleLabel = user.role === 'admin' ? 'Admin' : 'User';
 
   return (
-    <article className="flex min-h-[174px] flex-col gap-3 rounded-[14px] border border-[#E5E7EB] bg-white px-[17px] pb-3 pt-[17px] shadow-sm">
-      <div className="flex h-[60px] items-center gap-3">
+    <article className="flex flex-col gap-3 rounded-[14px] border border-[#E5E7EB] bg-white p-[17px] shadow-sm">
+      <div className="flex items-start gap-3">
         {avatarUrl ? (
           <img
             src={avatarUrl}
@@ -898,7 +1076,7 @@ function UserCard({ user, tone, onShowActivity, onToggleBlock, onSendNotice }) {
               blocked ? 'bg-[#FFE2E2] text-[#C10007]' : 'bg-[#DCFCE7] text-[#008236]'
             }`}
           >
-            {blocked ? 'Blocked' : user.role === 'admin' ? 'Admin' : 'Active'}
+            {roleLabel}
           </span>
         </div>
       </div>
@@ -918,7 +1096,7 @@ function UserCard({ user, tone, onShowActivity, onToggleBlock, onSendNotice }) {
   );
 }
 
-function SearchField({ value, onChange, placeholder = 'Search admin posts...' }) {
+function SearchField({ value, onChange, placeholder = 'Search for items...' }) {
   return (
     <label className="flex h-12 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-slate-400">
       <IconSearchSmall />
@@ -938,6 +1116,7 @@ function PostsPanel({
   activeFilter,
   keyword,
   advancedFilters,
+  locationFilter,
   categoryOptions,
   openFilter,
   sortBy,
@@ -945,7 +1124,8 @@ function PostsPanel({
   onFilterChange,
   onKeywordChange,
   onAdvancedFilterChange,
-  onClearAdvancedFilters,
+  onLocationFilterChange,
+  onClearFilters,
   onOpenFilterChange,
   onSortChange,
   onHide,
@@ -953,54 +1133,97 @@ function PostsPanel({
   onDelete,
   onReopen,
 }) {
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  });
+  const currentLocationDetails = locationFilter.building ? getLocationDetails(locationFilter.building) : [];
+  const today = new Date();
+  const calendarMonthLabel = new Intl.DateTimeFormat('en', {
+    month: 'long',
+    year: 'numeric',
+  }).format(calendarMonth);
+  const calendarDays = getMonthDays(calendarMonth);
+  const firstWeekday = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1).getDay();
+  const nextMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
+  const isNextMonthInFuture = nextMonth > new Date(today.getFullYear(), today.getMonth(), 1);
+  const hasActiveFilters = Boolean(
+    keyword
+      || activeFilter !== 'all'
+      || advancedFilters.category
+      || advancedFilters.date
+      || advancedFilters.location
+      || sortBy !== 'newest',
+  );
+
+  function selectDate(day) {
+    const selectedDate = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day);
+    if (selectedDate > today) return;
+    onAdvancedFilterChange('date', formatDateValue(selectedDate));
+  }
+
   if (loading) {
     return <EmptyState label="Loading posts..." />;
   }
 
   return (
-    <section className="flex flex-col gap-4">
+    <section>
       <form onSubmit={(event) => event.preventDefault()}>
         <SearchField value={keyword} onChange={onKeywordChange} />
       </form>
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="mt-3 grid grid-cols-3 rounded-xl bg-slate-100 p-1 text-xs font-semibold">
         {[
-          { id: 'newest', label: 'Newest First', icon: <IconSortDown /> },
-          { id: 'oldest', label: 'Oldest First', icon: <IconSortUp /> },
-          { id: 'relevance', label: 'Relevance', icon: <IconSpark /> },
+          { id: 'newest', label: 'Newest' },
+          { id: 'oldest', label: 'Oldest' },
+          { id: 'relevance', label: 'Relevant' },
         ].map((option) => (
           <button
             key={option.id}
             type="button"
             onClick={() => onSortChange(option.id)}
-            className={`min-h-[76px] rounded-[14px] border px-2 py-2 text-[12px] font-semibold ${
+            className={`rounded-lg px-2 py-2 ${
               sortBy === option.id
-                ? 'border-blue-200 bg-blue-50 text-blue-600'
-                : 'border-slate-200 bg-slate-50 text-slate-600'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-slate-500'
             }`}
           >
-            <span className="mx-auto mb-1 flex h-5 w-5 items-center justify-center">{option.icon}</span>
             {option.label}
           </button>
         ))}
       </div>
 
-      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-        {filters.map((filter) => (
-          <button
-            type="button"
-            key={filter.id}
-            onClick={() => onFilterChange(filter.id)}
-            className={`shrink-0 rounded-full px-3 py-2 text-[12px] font-semibold ${
-              activeFilter === filter.id ? 'bg-[#155DFC] text-white' : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            {filter.label}
-          </button>
-        ))}
+      <div className="relative mt-3">
+        <div className="flex gap-2 overflow-x-auto pb-1 pr-5">
+          {filters.map((filter) => (
+            <button
+              type="button"
+              key={filter.id}
+              onClick={() => onFilterChange(filter.id)}
+              className={`shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 text-[11px] font-semibold leading-none ${
+                activeFilter === filter.id ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+        <div className="pointer-events-none absolute bottom-1 right-0 top-0 w-7 bg-gradient-to-l from-white to-white/0" />
       </div>
 
-      <div className="grid grid-cols-4 gap-2">
+      <div className="mt-2 flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Filters</span>
+        <button
+          type="button"
+          disabled={!hasActiveFilters}
+          onClick={onClearFilters}
+          className="px-1 py-1 text-xs font-semibold text-blue-600 disabled:text-slate-300"
+        >
+          Clear all
+        </button>
+      </div>
+
+      <div className="mt-1.5 grid grid-cols-3 gap-2">
         {[
           { id: 'category', label: advancedFilters.category || 'Category', icon: <IconTag /> },
           { id: 'date', label: advancedFilters.date || 'Date', icon: <IconCalendar /> },
@@ -1012,11 +1235,11 @@ function PostsPanel({
               key={filter.id}
               type="button"
               onClick={() => onOpenFilterChange(openFilter === filter.id ? '' : filter.id)}
-              className={`min-h-[62px] rounded-[14px] border px-2 py-2 text-[12px] font-semibold ${
+              className={`rounded-xl border px-2 py-2 text-xs font-semibold ${
                 openFilter === filter.id
                   ? 'border-blue-200 bg-blue-50 text-blue-600'
                   : selected
-                    ? 'border-blue-100 bg-blue-50 text-blue-700'
+                    ? 'border-blue-100 bg-blue-50 text-blue-700 shadow-sm'
                     : 'border-slate-200 bg-white text-slate-600'
               }`}
             >
@@ -1025,17 +1248,10 @@ function PostsPanel({
             </button>
           );
         })}
-        <button
-          type="button"
-          onClick={onClearAdvancedFilters}
-          className="min-h-[62px] rounded-[14px] border border-slate-200 bg-white px-2 py-2 text-[12px] font-semibold text-slate-600"
-        >
-          Clear
-        </button>
       </div>
 
       {openFilter && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-3">
+        <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3">
           {openFilter === 'category' && (
             <select
               className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
@@ -1052,26 +1268,113 @@ function PostsPanel({
           )}
 
           {openFilter === 'date' && (
-            <input
-              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
-              type="date"
-              value={advancedFilters.date}
-              onChange={(event) => onAdvancedFilterChange('date', event.target.value)}
-            />
+            <>
+              <div className="mb-3 flex items-center justify-between">
+                <button
+                  className="rounded-full p-1 text-slate-600"
+                  type="button"
+                  aria-label="Previous month"
+                  onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}
+                >
+                  <IconChevronLeft />
+                </button>
+                <h2 className="text-sm font-semibold text-slate-950">{calendarMonthLabel}</h2>
+                <button
+                  className="rounded-full p-1 text-slate-600 disabled:text-slate-300"
+                  type="button"
+                  aria-label="Next month"
+                  disabled={isNextMonthInFuture}
+                  onClick={() => setCalendarMonth(nextMonth)}
+                >
+                  <IconChevronRight />
+                </button>
+              </div>
+              <div className="grid grid-cols-7 gap-y-2 text-center">
+                {weekDays.map((day) => (
+                  <div key={day} className="text-[11px] font-medium text-slate-400">
+                    {day}
+                  </div>
+                ))}
+                {Array.from({ length: firstWeekday }).map((_, index) => (
+                  <div key={`blank-${index}`} />
+                ))}
+                {calendarDays.map((day) => {
+                  const date = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day);
+                  const isFuture = date > today;
+                  const isSelected = advancedFilters.date === formatDateValue(date);
+
+                  return (
+                    <button
+                      key={day}
+                      className={`mx-auto flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold disabled:cursor-not-allowed ${
+                        isSelected
+                          ? 'bg-blue-600 text-white'
+                          : isFuture
+                            ? 'text-slate-300'
+                            : 'text-slate-700'
+                      }`}
+                      type="button"
+                      disabled={isFuture}
+                      onClick={() => selectDate(day)}
+                    >
+                      {day}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
 
           {openFilter === 'location' && (
-            <input
-              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
-              value={advancedFilters.location}
-              onChange={(event) => onAdvancedFilterChange('location', event.target.value)}
-              placeholder="Building, area, or room"
-            />
+            <div className="space-y-2">
+              <select
+                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
+                value={locationFilter.area}
+                onChange={(event) => {
+                  onLocationFilterChange({ area: event.target.value, building: '', detail: '' });
+                }}
+              >
+                <option value="">Any area</option>
+                {Object.keys(buildingsByArea).map((areaOption) => (
+                  <option key={areaOption}>{areaOption}</option>
+                ))}
+              </select>
+
+              {locationFilter.area && (
+                <select
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
+                  value={locationFilter.building}
+                  onChange={(event) => {
+                    onLocationFilterChange({ building: event.target.value, detail: '' });
+                  }}
+                >
+                  <option value="">Any building in {locationFilter.area}</option>
+                  {buildingsByArea[locationFilter.area].map((buildingOption) => (
+                    <option key={buildingOption}>{buildingOption}</option>
+                  ))}
+                </select>
+              )}
+
+              {locationFilter.building && (
+                <select
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
+                  value={locationFilter.detail}
+                  onChange={(event) => {
+                    onLocationFilterChange({ detail: event.target.value });
+                  }}
+                >
+                  <option value="">Any floor / entrance</option>
+                  {currentLocationDetails.map((locationDetailOption) => (
+                    <option key={locationDetailOption}>{locationDetailOption}</option>
+                  ))}
+                </select>
+              )}
+            </div>
           )}
         </div>
       )}
 
-      <div className="border-t border-slate-100 pt-4">
+      <div className="mt-5 border-t border-slate-100 pt-4">
         <p className="text-[14px] font-medium text-slate-500">
           {posts.length} result{posts.length === 1 ? '' : 's'}
         </p>
@@ -1256,36 +1559,59 @@ function ResolutionCard({ post, onResolve, onReject }) {
   return (
     <article className="rounded-[14px] border border-[#FDE68A] bg-white p-[17px] shadow-sm">
       <PostSummary post={post} />
-      <ClaimReviewDetails post={post} />
+      <ClaimReviewDetails post={post} onResolve={onResolve} />
       <div className="mt-3 rounded-[10px] bg-[#FFFBEB] px-3 py-2 text-[12px] leading-4 text-[#92400E]">
-        Review owner, date, and uploaded images before finalizing resolution.
+        Choose exactly one accepted claim to finalize. Other claims will be rejected.
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <SmallActionButton onClick={() => onResolve(post)} label="Resolve" icon={<IconCheck />} tone="blue" />
-        <SmallActionButton onClick={() => onReject(post)} label="Reject" icon={<IconBlock />} tone="red" />
+      <div className="mt-3 grid grid-cols-1 gap-2">
+        <SmallActionButton onClick={() => onReject(post)} label="Reject Resolution" icon={<IconBlock />} tone="red" />
       </div>
     </article>
   );
 }
 
-function ClaimReviewDetails({ post }) {
+function ClaimReviewDetails({ post, onResolve }) {
   const claims = Array.isArray(post.claim_requests) ? post.claim_requests : [];
-  const claim = post.accepted_claim || claims.find((item) => item.status === 'accepted') || claims[0];
-  const proofImages = Array.isArray(claim?.proof_images) ? claim.proof_images.filter(Boolean) : [];
+  const acceptedClaims = Array.isArray(post.accepted_claims)
+    ? post.accepted_claims
+    : claims.filter((item) => item.status === 'accepted');
+  const visibleAcceptedClaims = acceptedClaims.length
+    ? acceptedClaims
+    : [post.accepted_claim].filter(Boolean);
 
-  if (!claim) {
+  if (!visibleAcceptedClaims.length) {
     return (
       <div className="mt-3 rounded-[10px] border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-3">
-        <p className="text-[12px] font-medium text-[#6A7282]">No claim request details found.</p>
+        <p className="text-[12px] font-medium text-[#6A7282]">No accepted claim request details found.</p>
       </div>
     );
   }
 
   return (
     <div className="mt-3 rounded-[10px] border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6A7282]">
+        Accepted claims ({visibleAcceptedClaims.length})
+      </p>
+      <div className="mt-3 space-y-3">
+        {visibleAcceptedClaims.map((claim, index) => (
+          <AcceptedClaimSummary
+            key={claim.id || `${claim.claimant_email || 'claim'}-${index}`}
+            claim={claim}
+            onResolve={() => onResolve(post, claim)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AcceptedClaimSummary({ claim, onResolve }) {
+  const proofImages = Array.isArray(claim?.proof_images) ? claim.proof_images.filter(Boolean) : [];
+
+  return (
+    <div className="rounded-[10px] border border-[#E5E7EB] bg-white px-3 py-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6A7282]">Accepted claim</p>
           <p className="mt-1 break-words text-[13px] font-semibold leading-5 text-[#101828]">
             {claim.claimant_name || claim.claimant_email || `User #${claim.claimant_user_id}`}
           </p>
@@ -1328,6 +1654,15 @@ function ClaimReviewDetails({ post }) {
           ))}
         </div>
       )}
+
+      <button
+        type="button"
+        onClick={onResolve}
+        className="mt-3 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-[10px] bg-[#EFF6FF] px-2 text-center text-[12px] font-medium leading-4 text-[#1447E6]"
+      >
+        <IconCheck />
+        Resolve this claim
+      </button>
     </div>
   );
 }
@@ -1399,11 +1734,11 @@ function SmallActionButton({ onClick, label, icon, tone, disabled = false }) {
 
 function BottomNav({ activeSection, onSectionChange }) {
   const items = [
-    { id: 'posts', label: 'Posts', icon: <IconClipboard /> },
-    { id: 'reports', label: 'Reports', icon: <IconFlag /> },
-    { id: 'resolutions', label: 'Resolve', icon: <IconCheck /> },
-    { id: 'users', label: 'Users', icon: <IconUser /> },
-    { id: 'settings', label: 'Settings', icon: <IconSettings /> },
+    { id: 'posts', label: 'Posts', icon: IconClipboard },
+    { id: 'reports', label: 'Reports', icon: IconFlag },
+    { id: 'resolutions', label: 'Resolve', icon: IconCheck },
+    { id: 'users', label: 'Users', icon: IconUser },
+    { id: 'settings', label: 'Settings', icon: IconSettings },
   ];
 
   return (
@@ -1418,7 +1753,9 @@ function BottomNav({ activeSection, onSectionChange }) {
               activeSection === item.id ? 'text-[#155DFC]' : 'text-[#99A1AF]'
             }`}
           >
-            <div className="h-6 w-6">{item.icon}</div>
+            <span className="flex h-6 w-6 items-center justify-center">
+              <item.icon className="h-6 w-6 shrink-0" />
+            </span>
             <span>{item.label}</span>
           </button>
         ))}
@@ -1443,18 +1780,18 @@ function EmptyState({ label }) {
   );
 }
 
-function IconUser() {
+function IconUser({ className = 'h-[14px] w-[14px] shrink-0' } = {}) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20 21a8 8 0 0 0-16 0" />
       <circle cx="12" cy="7" r="4" />
     </svg>
   );
 }
 
-function IconClipboard() {
+function IconClipboard({ className = 'h-[14px] w-[14px] shrink-0' } = {}) {
   return (
-    <svg className="h-[14px] w-[14px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M9 5h6" />
       <path d="M9 12h6" />
       <path d="M9 17h4" />
@@ -1533,35 +1870,18 @@ function IconLogout() {
   );
 }
 
-function IconSortDown() {
+function IconChevronLeft() {
   return (
     <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M11 5v12" />
-      <path d="m7 13 4 4 4-4" />
-      <path d="M17 7h4" />
-      <path d="M17 12h3" />
-      <path d="M17 17h2" />
+      <path d="m15 18-6-6 6-6" />
     </svg>
   );
 }
 
-function IconSortUp() {
+function IconChevronRight() {
   return (
     <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M11 19V7" />
-      <path d="m7 11 4-4 4 4" />
-      <path d="M17 7h2" />
-      <path d="M17 12h3" />
-      <path d="M17 17h4" />
-    </svg>
-  );
-}
-
-function IconSpark() {
-  return (
-    <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
-      <path d="m19 15 .9 2.6L22 18.5l-2.1.9L19 22l-.9-2.6-2.1-.9 2.1-.9z" />
+      <path d="m9 18 6-6-6-6" />
     </svg>
   );
 }
@@ -1595,9 +1915,9 @@ function IconLocation() {
   );
 }
 
-function IconCheck() {
+function IconCheck({ className = 'h-[14px] w-[14px] shrink-0' } = {}) {
   return (
-    <svg className="h-[14px] w-[14px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20 6 9 17l-5-5" />
     </svg>
   );
@@ -1622,18 +1942,18 @@ function IconImage() {
   );
 }
 
-function IconFlag() {
+function IconFlag({ className = 'h-[14px] w-[14px] shrink-0' } = {}) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1z" />
       <path d="M4 22V15" />
     </svg>
   );
 }
 
-function IconSettings() {
+function IconSettings({ className = 'h-[14px] w-[14px] shrink-0' } = {}) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" />
       <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 1 1 4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9L4.2 7A2 2 0 1 1 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
     </svg>
