@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import MobileLayout from '../components/MobileLayout';
+import LocationPicker from '../components/LocationPicker';
 import PostCard from '../components/PostCard';
 import {
   CalendarIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   LocationIcon,
+  RefreshIcon,
   SearchIcon,
-  SortDownIcon,
-  SortUpIcon,
-  SparkIcon,
   TagIcon,
 } from '../components/Icons';
+import { DEFAULT_CATEGORY_NAMES } from '../data/postOptions';
 import { getMockList, searchMockPosts } from '../data/mockPosts';
 import api from '../services/api';
 
@@ -28,134 +28,10 @@ const postFilters = [
   { label: 'Lost', params: { type: 'lost', status: 'open' } },
   { label: 'Found', params: { type: 'found', status: 'open' } },
   { label: 'Claimed', params: { status: 'claimed' } },
-  { label: 'Pending', params: { status: 'pending_resolution' } },
   { label: 'Resolved', params: { status: 'resolved' } },
 ];
-const DEFAULT_CATEGORIES = ['Electronics', 'Clothing', 'Books', 'Accessories', 'Keys', 'Wallet', 'ID Card', 'Other'];
-const buildingsByArea = {
-  North: [
-    'N1 IT Convergence Building',
-    'N2 Branch Administration B/D',
-    'N3 Sports Complex',
-    'N4 School of Humanities & Social Science B/D',
-    'N5 Basic Experiement & Research B/D',
-    'N6 Faculty Hall',
-    'N7 Mechanical Engineering B/D',
-    'N7-1 Dept. of Nuclear & Quantum Engineering',
-    'N7-2 Dept. of Aerospace Engineering',
-    'N7-3, 4 Dept. of Mechanical Engineering',
-    'N7-5 Automobile Technology Laboratory Building',
-    'N9 Practice B/D',
-    'N10 Undergraduate Branch Library',
-    'N11 Cafeteria',
-    'N12 Student Center-2',
-    'N13 Tae Wul Gwan',
-    'N13-1 Chang Young Shin Student Center',
-    'N14 Sarang Hall',
-    'N15 Staff Accommodation',
-    'N16 Somang Hall',
-    'N17 Seongsil Hall',
-    'N18 Jilli Hall',
-    'N19 Areum Hall',
-    'N20 Silloe Hall',
-    'N21 Jihye Hall',
-    'N22 Alumni Venture Hall',
-    'N23 fMRI Center',
-    'N24 LG Innovation Hall',
-    'N25 Dept. of Industrial Design B/D',
-    'N26 Center for High-Performance Integrated Systems',
-    'N27 Eureka Hall',
-    'N28 Energy & Environment Research Center',
-  ],
-  East: [
-    'E2 Industrial Engineering & Management B/D',
-    'E2-1 Dept. of Mathematical Sciences',
-    'E2-2 Dept. of Industrial & Systems Engineering',
-    'E2-3 Graduate School of Knowledge Service Engineering',
-    'E3 Information & Electronics B/D',
-    'E3-1 School of Computing',
-    'E3-2 School of Electrical Engineering',
-    'E3-3 Device Innovation Facility',
-    'E3-4 Saeneul Dong',
-    'E4 KAIST Institutes B/D',
-    'E5 Faculty Club',
-    'E6 Natural Science B/D',
-    'E6-1 Dept. of Mathematical Sciences',
-    'E6-2 Dept. of Physics',
-    'E6-3 Dept. of Biological Sciences',
-    'E6-4 Dept. of Chemistry',
-    'E6-5 GoongNi Laboratory Building',
-    'E6-6 Basic Science Building',
-    'E7 Biomedical Research Center',
-    'E8 Sejong Hall',
-    'E9 Academic Cultural Complex',
-    'E10 Storehouse',
-    'E11 Creative Learning B/D',
-    'E12 Energy Plant',
-    'E13 Satellite Technology Research Center',
-    'E14 Main Administration B/D',
-    'E15 Auditorium',
-    'E16 ChungMoonSoul B/D',
-    'E16-1 YANG Bun Soon B/D',
-    'E17 Stadium',
-    'E18 Daejeon Disease-model Animal Center',
-    'E18-1 Bio Model System Park',
-    'E19 National Nano Fab Center',
-    'E20 Kyeryong Hall',
-    'E21 KAIST Clinic, Pharmacy',
-  ],
-  West: [
-    'W1 Applied Engineering B/D',
-    'W1-1 Dept. of Materials Science & Engineering',
-    'W1-2 Dept. of Civil & Environmental Engineering',
-    'W1-3 Dept. of Chemical & Biomolecular Engineering',
-    'W2 Student Center-1',
-    'W2-1 International Center',
-    'W3 Galilei Hall',
-    'W4-1 Yeoul Hall',
-    'W4-2 Nadl Hall',
-    'W4-3 Dasom Hall',
-    'W4-4 Heemang Hall',
-    'W5-1 Married Students Housing',
-    'W5-2 Startup Village',
-    'W5-3 International Village C',
-    'W5-4 International Village A',
-    'W5-5 International Village B',
-    'W6 Mir Hall, Narae Hall',
-    'W7 Nanum Hall',
-    'W8 Educational Support B/D',
-    'W8-1 Analysis Center for Research Advancement',
-    'W9 Outdoor Theater',
-    'W10 Wind Tunnel Laboratory',
-    'W11 International Faculty Apartment',
-    'W12 West Energy Plant',
-    'W16 Geotechnical Centrifuge Testing Center',
-  ],
-};
 const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const today = new Date();
-
-function getFloorLabel(floor) {
-  if (floor === 1) return '1st floor';
-  if (floor === 2) return '2nd floor';
-  if (floor === 3) return '3rd floor';
-  return `${floor}th floor`;
-}
-
-function guessFloorCount(buildingName) {
-  if (/Outdoor|Stadium|Plant|Storehouse|Tunnel/i.test(buildingName)) return 1;
-  if (/Hall|Accommodation|Village|Apartment|Housing/i.test(buildingName)) return 10;
-  if (/Center|Complex|Library|Student Center|Clinic|Administration/i.test(buildingName)) return 5;
-  if (/Dept\.|School|Engineering|Science|Research|Institute|Building|B\/D/i.test(buildingName)) return 7;
-  return 4;
-}
-
-function getLocationDetails(buildingName) {
-  return [
-    'Near entrance',
-    ...Array.from({ length: guessFloorCount(buildingName) }, (_, index) => getFloorLabel(index + 1)),
-  ];
-}
 
 function getMonthDays(monthDate) {
   return Array.from(
@@ -293,9 +169,6 @@ export default function SearchPage() {
     status: '',
     scope: 'unsolved',
   });
-  const [area, setArea] = useState('North');
-  const [building, setBuilding] = useState('');
-  const [locationDetail, setLocationDetail] = useState('');
   const [calendarMonth, setCalendarMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [sortBy, setSortBy] = useState('newest');
   const [viewMode, setViewMode] = useState('compact');
@@ -305,7 +178,7 @@ export default function SearchPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState('');
-  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [categories, setCategories] = useState(DEFAULT_CATEGORY_NAMES);
 
   useEffect(() => {
     api.get('/posts/categories')
@@ -334,7 +207,16 @@ export default function SearchPage() {
   const firstWeekday = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1).getDay();
   const nextMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
   const isNextMonthInFuture = nextMonth > new Date(today.getFullYear(), today.getMonth(), 1);
-  const currentLocationDetails = building ? getLocationDetails(building) : [];
+  const hasActiveFilters = Boolean(
+    filters.keyword
+      || filters.category
+      || filters.location
+      || filters.date
+      || filters.type
+      || filters.status
+      || filters.scope !== 'unsolved'
+      || sortBy !== 'newest',
+  );
 
   async function runSearch(page = 1, nextFilters = filters) {
     const setLoading = page === 1 ? setIsLoading : setIsLoadingMore;
@@ -400,23 +282,12 @@ export default function SearchPage() {
       scope: 'unsolved',
     };
     setFilters(emptyFilters);
-    setArea('North');
-    setBuilding('');
-    setLocationDetail('');
     setSortBy('newest');
     setOpenFilter('');
     runSearch(1, emptyFilters);
   }
 
-  function applyLocation(nextArea = area, nextBuilding = building, nextLocationDetail = locationDetail) {
-    let location = nextArea;
-    if (nextArea && nextBuilding) {
-      location = `${nextArea} - ${nextBuilding}`;
-    }
-    if (nextArea && nextBuilding && nextLocationDetail) {
-      location = `${nextArea} - ${nextBuilding}, ${nextLocationDetail}`;
-    }
-
+  function applyLocation(location) {
     const nextFilters = {
       ...filters,
       location,
@@ -473,48 +344,62 @@ export default function SearchPage() {
           <SearchField value={filters.keyword} onChange={updateKeyword} />
         </form>
 
-        <div className="mt-4 grid grid-cols-3 gap-2">
+        <div className="mt-3 grid grid-cols-3 rounded-xl bg-slate-100 p-1 text-xs font-semibold">
           {[
-            { key: 'newest', label: 'Newest First', icon: SortDownIcon },
-            { key: 'oldest', label: 'Oldest First', icon: SortUpIcon },
-            { key: 'relevance', label: 'Relevance', icon: SparkIcon },
-          ].map(({ key, label, icon: SortIcon }) => (
+            { key: 'newest', label: 'Newest' },
+            { key: 'oldest', label: 'Oldest' },
+            { key: 'relevance', label: 'Relevant' },
+          ].map(({ key, label }) => (
             <button
               key={key}
-              className={`rounded-xl border px-2 py-2 text-xs font-medium ${
+              className={`rounded-lg px-2 py-2 ${
                 sortBy === key
-                  ? 'border-blue-200 bg-blue-50 text-blue-600'
-                  : 'border-slate-200 bg-slate-50 text-slate-600'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-slate-500'
               }`}
               type="button"
               onClick={() => setSortBy(key)}
             >
-              <SortIcon className="mx-auto mb-1 h-4 w-4" />
               {label}
             </button>
           ))}
         </div>
 
-        <div className="mt-3 grid grid-cols-6 gap-1.5">
-          {postFilters.map((filter) => (
-            <button
-              key={filter.label}
-              className={`rounded-full px-1.5 py-2 text-[11px] font-semibold ${
-                filters.type === (filter.params.type || '')
-                  && filters.status === (filter.params.status || '')
-                  && filters.scope === (filter.params.scope || '')
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 text-slate-600'
-              }`}
-              type="button"
-              onClick={() => selectPostFilter(filter)}
-            >
-              {filter.label}
-            </button>
-          ))}
+        <div className="relative mt-3">
+          <div className="flex gap-2 overflow-x-auto pb-1 pr-5">
+            {postFilters.map((filter) => (
+              <button
+                key={filter.label}
+                className={`shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 text-[11px] font-semibold leading-none ${
+                  filters.type === (filter.params.type || '')
+                    && filters.status === (filter.params.status || '')
+                    && filters.scope === (filter.params.scope || '')
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-100 text-slate-600'
+                }`}
+                type="button"
+                onClick={() => selectPostFilter(filter)}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+          <div className="pointer-events-none absolute bottom-1 right-0 top-0 w-7 bg-gradient-to-l from-white to-white/0" />
         </div>
 
-        <div className="mt-3 grid grid-cols-4 gap-2">
+        <div className="mt-2 flex items-center justify-between">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Filters</span>
+          <button
+            className="px-1 py-1 text-xs font-semibold text-blue-600 disabled:text-slate-300"
+            type="button"
+            disabled={!hasActiveFilters}
+            onClick={clearFilters}
+          >
+            Clear all
+          </button>
+        </div>
+
+        <div className="mt-1.5 grid grid-cols-3 gap-2">
           {[
             { key: 'category', label: filters.category || 'Category', icon: TagIcon, selected: Boolean(filters.category) },
             { key: 'date', label: filters.date || 'Date', icon: CalendarIcon, selected: Boolean(filters.date) },
@@ -536,13 +421,6 @@ export default function SearchPage() {
               <span className="block truncate">{label}</span>
             </button>
           ))}
-          <button
-            className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-600"
-            type="button"
-            onClick={clearFilters}
-          >
-            Clear
-          </button>
         </div>
 
         {openFilter && (
@@ -621,56 +499,11 @@ export default function SearchPage() {
             )}
 
             {openFilter === 'location' && (
-              <div className="space-y-2">
-              <select
-                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
-                value={area}
-                onChange={(event) => {
-                  const nextArea = event.target.value;
-                  setArea(nextArea);
-                  setBuilding('');
-                  setLocationDetail('');
-                  applyLocation(nextArea, '', '');
-                }}
-              >
-                <option value="">Any area</option>
-                {Object.keys(buildingsByArea).map((areaOption) => (
-                  <option key={areaOption}>{areaOption}</option>
-                ))}
-              </select>
-              {area && (
-                <select
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
-                  value={building}
-                  onChange={(event) => {
-                    const nextBuilding = event.target.value;
-                    setBuilding(nextBuilding);
-                    setLocationDetail('');
-                    applyLocation(area, nextBuilding, '');
-                  }}
-                >
-                  <option value="">Any building in {area}</option>
-                  {buildingsByArea[area].map((buildingOption) => (
-                    <option key={buildingOption}>{buildingOption}</option>
-                  ))}
-                </select>
-              )}
-              {building && (
-                <select
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-950 outline-none"
-                  value={locationDetail}
-                  onChange={(event) => {
-                    setLocationDetail(event.target.value);
-                    applyLocation(area, building, event.target.value);
-                  }}
-                >
-                  <option value="">Any floor / entrance</option>
-                  {currentLocationDetails.map((locationDetailOption) => (
-                    <option key={locationDetailOption}>{locationDetailOption}</option>
-                  ))}
-                </select>
-              )}
-            </div>
+              <LocationPicker
+                framed={false}
+                location={filters.location}
+                onChange={applyLocation}
+              />
             )}
           </div>
         )}
@@ -681,11 +514,21 @@ export default function SearchPage() {
           </div>
         )}
 
-        <div className="mt-5 border-t border-slate-100 pt-4">
+        <div className="mt-4 border-t border-slate-100 pt-4">
           {isLoading ? (
             <div className="space-y-5">
-              {Array.from({ length: 2 }).map((_, index) => (
-                <div key={index} className="h-80 animate-pulse rounded-2xl bg-slate-100" />
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="animate-pulse overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+                  <div className="h-48 bg-slate-100" />
+                  <div className="space-y-3 p-5">
+                    <div className="flex gap-3">
+                      <div className="h-5 flex-1 rounded-full bg-slate-100" />
+                      <div className="h-5 w-16 rounded-full bg-slate-100" />
+                    </div>
+                    <div className="h-4 w-2/3 rounded-full bg-slate-100" />
+                    <div className="h-4 w-1/2 rounded-full bg-slate-100" />
+                  </div>
+                </div>
               ))}
             </div>
           ) : visiblePosts.length === 0 ? (
@@ -699,23 +542,34 @@ export default function SearchPage() {
                 <span className="text-sm font-medium text-slate-500">
                   {pagination.total} result{pagination.total === 1 ? '' : 's'}
                 </span>
-                <div className="grid grid-cols-3 rounded-xl bg-slate-100 p-1 text-xs font-semibold">
-                  {[
-                    { key: 'large', label: 'Large' },
-                    { key: 'compact', label: 'Compact' },
-                    { key: 'list', label: 'List' },
-                  ].map(({ key, label }) => (
-                    <button
-                      key={key}
-                      className={`rounded-lg px-2 py-1.5 ${
-                        viewMode === key ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'
-                      }`}
-                      type="button"
-                      onClick={() => setViewMode(key)}
-                    >
-                      {label}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-3 rounded-xl bg-slate-100 p-1 text-xs font-semibold">
+                    {[
+                      { key: 'large', label: 'Large' },
+                      { key: 'compact', label: 'Compact' },
+                      { key: 'list', label: 'List' },
+                    ].map(({ key, label }) => (
+                      <button
+                        key={key}
+                        className={`rounded-lg px-2 py-1.5 ${
+                          viewMode === key ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'
+                        }`}
+                        type="button"
+                        onClick={() => setViewMode(key)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    className="rounded-full p-1.5 text-slate-400 disabled:opacity-50"
+                    type="button"
+                    aria-label="Refresh search results"
+                    disabled={isLoading || isLoadingMore}
+                    onClick={() => runSearch(1, filters)}
+                  >
+                    <RefreshIcon className="h-5 w-5" />
+                  </button>
                 </div>
               </div>
               <div className={viewMode === 'large' ? 'space-y-6' : 'space-y-3'}>

@@ -14,6 +14,7 @@ const STATUS_TRANSITIONS = {
   pending_resolution: new Set([]),
   resolved: new Set([]),
 };
+const CLAIMABLE_STATUSES = new Set(['open', 'claimed']);
 
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(value, 10);
@@ -192,26 +193,28 @@ function parseClaimBody(body) {
   return { message, foundLocation, foundDate, proofImages };
 }
 
-function validateClaimInput(input, res) {
+function validateClaimInput(input, post, res) {
+  const claimDateLabel = post?.type === 'lost' ? 'Found date' : 'Lost date';
+
   if (!input.message) {
     res.status(400).json({ error: 'Claim message is required' });
     return false;
   }
-  if (!input.foundLocation) {
+  if (post?.type === 'lost' && !input.foundLocation) {
     res.status(400).json({ error: 'Found location is required' });
     return false;
   }
   if (!input.foundDate) {
-    res.status(400).json({ error: 'Found date and time are required' });
+    res.status(400).json({ error: `${claimDateLabel} is required` });
     return false;
   }
   const foundAt = new Date(input.foundDate);
   if (Number.isNaN(foundAt.getTime())) {
-    res.status(400).json({ error: 'Found date is invalid' });
+    res.status(400).json({ error: `${claimDateLabel} is invalid` });
     return false;
   }
   if (foundAt > new Date()) {
-    res.status(400).json({ error: 'Found date cannot be in the future' });
+    res.status(400).json({ error: `${claimDateLabel} cannot be in the future` });
     return false;
   }
   return true;
@@ -262,6 +265,7 @@ async function listPosts(req, res) {
   if (!process.env.DATABASE_URL || process.env.USE_MOCK_DATA === 'true') {
     const visiblePosts = mockPosts
       .filter((post) => post.status !== 'hidden')
+      .filter((post) => post.status !== 'pending_resolution')
       .filter((post) => status || post.status !== 'resolved')
       .filter((post) => !type || post.type === type)
       .filter((post) => !status || post.status === status)
@@ -270,7 +274,7 @@ async function listPosts(req, res) {
     return res.json(paginatePosts(visiblePosts, page, limit));
   }
 
-  const conditions = ['p.is_archived = FALSE', "p.status <> 'hidden'"];
+  const conditions = ['p.is_archived = FALSE', "p.status <> 'hidden'", "p.status <> 'pending_resolution'"];
   const values = [];
 
   if (type) {
@@ -440,11 +444,6 @@ async function editPost(req, res) {
 
     const input = parsePostBody(req.body);
     if (!validatePostInput(input, res)) return;
-    const existingImages = Array.isArray(post.images) ? post.images.filter(Boolean) : [];
-
-    if (input.images.length > existingImages.length) {
-      return res.status(400).json({ error: 'You can replace existing photos, but cannot add more photos while editing' });
-    }
 
     const { rows } = await pool.query(
       `UPDATE posts
@@ -513,7 +512,6 @@ async function createClaimRequest(req, res) {
   try {
     await ensureClaimRequestsTable();
     const input = parseClaimBody(req.body);
-    if (!validateClaimInput(input, res)) return;
 
     await client.query('BEGIN');
     const { rows } = await client.query('SELECT * FROM posts WHERE id = $1 FOR UPDATE', [req.params.id]);
@@ -523,13 +521,21 @@ async function createClaimRequest(req, res) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Post not found' });
     }
+    if (req.user.role === 'admin') {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Admins cannot submit claim requests' });
+    }
     if (canModify(req.user, post)) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Owners cannot claim their own posts' });
     }
-    if (post.status !== 'open') {
+    if (!CLAIMABLE_STATUSES.has(post.status)) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'This post is not open for new claims' });
+      return res.status(400).json({ error: 'This post is not accepting new claims right now' });
+    }
+    if (!validateClaimInput(input, post, res)) {
+      await client.query('ROLLBACK');
+      return;
     }
 
     const duplicate = await client.query(
@@ -646,9 +652,9 @@ async function updateClaimRequest(req, res) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'This claim request has already been reviewed' });
     }
-    if (nextStatus === 'accepted' && post.status !== 'open') {
+    if (nextStatus === 'accepted' && !CLAIMABLE_STATUSES.has(post.status)) {
       await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Only open posts can accept claim requests' });
+      return res.status(400).json({ error: 'Only open or claimed posts can accept claim requests' });
     }
 
     const updatedClaim = await client.query(
@@ -666,15 +672,6 @@ async function updateClaimRequest(req, res) {
     let updatedPost = post;
 
     if (nextStatus === 'accepted') {
-      await client.query(
-        `UPDATE claim_requests
-         SET status = 'rejected',
-             updated_at = NOW()
-         WHERE post_id = $1
-           AND id <> $2
-           AND status = 'pending'`,
-        [req.params.id, req.params.claimId],
-      );
       const postUpdate = await client.query(
         `UPDATE posts
          SET status = 'claimed',
