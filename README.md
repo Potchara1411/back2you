@@ -2,13 +2,13 @@
 
 A Lost & Found web application for KAIST members — post lost or found items, search and filter them, claim items, and manage everything through an admin panel.
 
-Built for **CS350 Software Engineering, Spring 2026 — Team 5**.
+Built for **CS350 Software Engineering, Spring 2026**.
 
 ## Team Members
 - Potchara Sukrason — Authentication
 - Paradee Suwanvong — Post Management
-- Ratchata Rattanakit — Home Feed & Search
-- Na Yoonsu — Admin Panel
+- Ratchata Rattanakit — Admin Panel
+- Na Yoonsu — Home Feed & Search
 
 ## Features
 - **Passwordless login** — one-time code (OTP) sent to your `@kaist.ac.kr` email, JWT-based sessions
