@@ -6,9 +6,9 @@ Built for **CS350 Software Engineering, Spring 2026**.
 
 ## Team Members
 - Potchara Sukrason — Authentication
-- Paradee Suwanvong — Post Management
+- Paradee Suwanvong — Home Feed & Search
 - Ratchata Rattanakit — Admin Panel
-- Na Yoonsu — Home Feed & Search
+- Na Yoonsu — Post Management
 
 ## Features
 - **Passwordless login** — one-time code (OTP) sent to your `@kaist.ac.kr` email, JWT-based sessions
